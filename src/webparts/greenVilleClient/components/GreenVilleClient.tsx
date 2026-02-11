@@ -9,7 +9,7 @@ export default class GreenVilleClient extends React.Component<IGreenVilleClientP
 
     return (
       <>
-      Hello Green  Ville</>
+      Hello GreenVille</>
     );
   }
 }
