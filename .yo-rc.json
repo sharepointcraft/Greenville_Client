@@ -1,0 +1,19 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "useGulp": false,
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.22.0",
+    "sdksVersions": {},
+    "version": "1.22.2",
+    "libraryName": "greenville-client",
+    "libraryId": "fd5c571e-ca88-418c-abdf-6f90a7792eae",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionName": "Greenville-client",
+    "solutionShortDescription": "Greenville-client description",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "componentType": "webpart"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "green-ville-client-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/greenVilleClient/GreenVilleClientWebPart.js",
+          "manifest": "./src/webparts/greenVilleClient/GreenVilleClientWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "GreenVilleClientWebPartStrings": "lib/webparts/greenVilleClient/loc/{locale}.js"
+  }
+}

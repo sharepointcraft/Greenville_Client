@@ -1,0 +1,40 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "greenville-client-client-side-solution",
+    "id": "fd5c571e-ca88-418c-abdf-6f90a7792eae",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.22.2"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "Greenville-client description"
+      },
+      "longDescription": {
+        "default": "Greenville-client description"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "greenville-client Feature",
+        "description": "The feature that activates elements of the greenville-client solution.",
+        "id": "30e49e3c-730a-4d3d-b59b-69c63077f631",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/greenville-client.sppkg"
+  }
+}
