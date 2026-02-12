@@ -1,1 +1,63 @@
 @import '~@fluentui/react/dist/sass/References.scss';
+
+.layout {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  padding: 12px 0;
+  box-sizing: border-box;
+}
+
+.panelWrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.leftColumn {
+  flex: 0 0 28%;
+  max-width: 360px;
+}
+
+.rightColumn {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .leftColumn,
+  .rightColumn {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 1200px) {
+  .leftColumn {
+    flex-basis: 32%;
+  }
+}
+
+@media (max-width: 1080px) {
+  .leftColumn {
+    flex-basis: 35%;
+  }
+}
+
+@media (max-width: 860px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  .leftColumn,
+  .rightColumn {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+}

@@ -1,0 +1,90 @@
+.leftPanel {
+  width: 100%;
+  max-width: 100%;
+  min-width: 220px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f8f8f8;
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  overflow: hidden;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, #3fa541 0%, #2f8a33 100%);
+  color: #fff;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.headerTitle {
+  flex: 1;
+  font-size: 14px;
+}
+
+.addButton {
+  background: #f6f6f6;
+  color: #2f8a33;
+  border: none;
+  border-radius: 3px;
+  font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.addButton:hover {
+  background: #e8e8e8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.clientList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: #ffffff;
+}
+
+.clientItem {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #333;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  background: #ffffff;
+  width: 100%;
+  text-align: left;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.clientItem:last-child {
+  border-bottom: none;
+}
+
+.clientItem:hover {
+  background: #3fa541;
+  color: #fff;
+}
+
+.active {
+  background: #3fa541;
+  color: #fff;
+  font-weight: 700;
+}
+
+.clientName {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
