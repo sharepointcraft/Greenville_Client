@@ -1,6 +1,7 @@
 import * as React from 'react';
+import { SPHttpClient } from '@microsoft/sp-http';
 import styles from './RightPanel.module.scss';
-import Summary, { Person } from './Tabs/Summary';
+import Summary from './Tabs/Summary';
 import Documents from './Tabs/Documents';
 import Tasks from './Tabs/Tasks';
 import Entities from './Tabs/Entities';
@@ -9,30 +10,71 @@ const tabs = ['Summary', 'Documents', 'Tasks', 'Entities'] as const;
 
 interface RightPanelProps {
   name?: string;
+  spHttpClient: SPHttpClient;
+  siteUrl: string;
+  listTitle?: string;
 }
-
-const basePerson: Person = {
-  name: 'Alex Tuzzolino',
-  alias: 'Alex M Tuzzolino',
-  address: '638 Manhattan Rd SE\nGrand Rapids, MI 49506',
-  maritalStatus: 'Married',
-  generation: 'G3',
-  birthday: '06-26-1989',
-  driversLicense: 'T 245 044 603 500',
-  federalTaxId: '362-19-4241',
-  anniversary: 'Jun-06-2015',
-};
 
 type TabKey = typeof tabs[number];
 
-const RightPanel: React.FC<RightPanelProps> = ({ name }) => {
+const RightPanel: React.FC<RightPanelProps> = ({
+  name,
+  spHttpClient,
+  siteUrl,
+  listTitle = 'Clients',
+}) => {
   const [activeTab, setActiveTab] = React.useState<TabKey>('Summary');
-  const person = { ...basePerson, name: name || basePerson.name };
+  const [clientItem, setClientItem] = React.useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const fetchClient = async (): Promise<void> => {
+      if (!name) {
+        setClientItem(null);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      const safeName = name.replace(/'/g, "''");
+      const safeListTitle = listTitle.replace(/'/g, "''");
+      const url = `${siteUrl}/_api/web/lists/getbytitle('${safeListTitle}')/items?$select=*,FieldValuesAsText/*&$expand=FieldValuesAsText&$filter=Title eq '${safeName}'&$top=1`;
+
+      try {
+        const response = await spHttpClient.get(url, SPHttpClient.configurations.v1);
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const item = data?.value?.[0] ?? null;
+        setClientItem(item);
+        // eslint-disable-next-line no-console
+        console.debug('Client fetch result', { url, item });
+      } catch (err) {
+        setError((err as Error).message);
+        setClientItem(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchClient();
+  }, [name, listTitle, siteUrl, spHttpClient]);
 
   const renderContent = () => {
     switch (activeTab) {
       case 'Summary':
-        return <Summary person={person} />;
+        return (
+          <Summary
+            title={name}
+            item={clientItem}
+            loading={loading}
+            error={error}
+          />
+        );
       case 'Documents':
         return <Documents />;
       case 'Tasks':
@@ -46,7 +88,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ name }) => {
 
   return (
     <div className={styles.rightPanel}>
-      <h2 className={styles.personTitle}>{person.name}</h2>
+      <h2 className={styles.personTitle}>{name || 'Client'}</h2>
 
       <div className={styles.tabs}>
         {tabs.map((tab) => (

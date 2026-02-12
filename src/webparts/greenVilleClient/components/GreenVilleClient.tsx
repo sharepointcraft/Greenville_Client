@@ -12,7 +12,7 @@ export default class GreenVilleClient extends React.Component<IGreenVilleClientP
   public constructor(props: IGreenVilleClientProps) {
     super(props);
     this.state = {
-      selectedClientName: 'Alex Tuzzolino',
+      selectedClientName: '',
     };
   }
 
@@ -21,8 +21,7 @@ export default class GreenVilleClient extends React.Component<IGreenVilleClientP
   };
 
   public render(): React.ReactElement<IGreenVilleClientProps> {
-    const {
-    } = this.props;
+    const { spHttpClient, siteUrl } = this.props;
     const { selectedClientName } = this.state;
 
     return (
@@ -31,10 +30,16 @@ export default class GreenVilleClient extends React.Component<IGreenVilleClientP
           <LeftPanel
             selectedName={selectedClientName}
             onSelect={this.handleSelectClient}
+            spHttpClient={spHttpClient}
+            siteUrl={siteUrl}
           />
         </div>
         <div className={`${styles.rightColumn} ${styles.panelWrapper}`}>
-          <RightPanel name={selectedClientName} />
+          <RightPanel
+            name={selectedClientName}
+            spHttpClient={spHttpClient}
+            siteUrl={siteUrl}
+          />
         </div>
       </div>
     );
