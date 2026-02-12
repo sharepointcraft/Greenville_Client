@@ -1,5 +1,9 @@
 import * as React from 'react';
 import styles from './RightPanel.module.scss';
+import Summary, { Person } from './Tabs/Summary';
+import Documents from './Tabs/Documents';
+import Tasks from './Tabs/Tasks';
+import Entities from './Tabs/Entities';
 
 const tabs = ['Summary', 'Documents', 'Tasks', 'Entities'] as const;
 
@@ -7,7 +11,7 @@ interface RightPanelProps {
   name?: string;
 }
 
-const basePerson = {
+const basePerson: Person = {
   name: 'Alex Tuzzolino',
   alias: 'Alex M Tuzzolino',
   address: '638 Manhattan Rd SE\nGrand Rapids, MI 49506',
@@ -26,59 +30,18 @@ const RightPanel: React.FC<RightPanelProps> = ({ name }) => {
   const person = { ...basePerson, name: name || basePerson.name };
 
   const renderContent = () => {
-    if (activeTab !== 'Summary') {
-      return (
-        <div className={styles.placeholder}>
-          {`${activeTab} content goes here.`}
-        </div>
-      );
+    switch (activeTab) {
+      case 'Summary':
+        return <Summary person={person} />;
+      case 'Documents':
+        return <Documents />;
+      case 'Tasks':
+        return <Tasks />;
+      case 'Entities':
+        return <Entities />;
+      default:
+        return null;
     }
-
-    return (
-      <div className={styles.detailCard}>
-        <div className={styles.detailRow}>
-          <div className={styles.detailLabel}>Client Name:</div>
-          <div className={styles.detailValue}>{person.name}</div>
-          <div className={styles.detailLabel}>Aliases:</div>
-          <div className={styles.detailValue}>{person.alias}</div>
-        </div>
-
-        <div className={styles.detailRow}>
-          <div className={styles.detailLabel}>Address:</div>
-          <div className={styles.detailValue}>
-            {person.address.split('\n').map((line, idx) => (
-              <React.Fragment key={idx}>
-                {line}
-                <br />
-              </React.Fragment>
-            ))}
-          </div>
-          <div className={styles.detailLabel}>Marital Status:</div>
-          <div className={styles.detailValue}>{person.maritalStatus}</div>
-        </div>
-
-        <div className={styles.detailRow}>
-          <div className={styles.detailLabel}>Generation:</div>
-          <div className={styles.detailValue}>{person.generation}</div>
-          <div className={styles.detailLabel}>Birthday:</div>
-          <div className={styles.detailValue}>{person.birthday}</div>
-        </div>
-
-        <div className={styles.detailRow}>
-          <div className={styles.detailLabel}>Federal Tax ID:</div>
-          <div className={styles.detailValue}>{person.federalTaxId}</div>
-          <div className={styles.detailLabel}>Drivers License:</div>
-          <div className={styles.detailValue}>{person.driversLicense}</div>
-        </div>
-
-        <div className={styles.detailRow}>
-          <div className={styles.detailLabel}>Anniversary:</div>
-          <div className={styles.detailValue}>{person.anniversary}</div>
-          <div className={styles.detailSpacer} />
-          <div className={styles.detailSpacer} />
-        </div>
-      </div>
-    );
   };
 
   return (
