@@ -1,5 +1,6 @@
 import * as React from 'react';
 import styles from '../RightPanel.module.scss';
+import { SUMMARY_COLUMNS } from '../../constants/columns';
 
 interface SummaryProps {
   title?: string;
@@ -35,24 +36,6 @@ const Summary: React.FC<SummaryProps> = ({ title, item, loading, error }) => {
 
   const fieldValuesAsText = (item.FieldValuesAsText as Record<string, unknown>) || {};
 
-  const columns: { label: string; keys: string[] }[] = [
-    { label: 'Title', keys: ['Title'] },
-    { label: 'Client', keys: ['Client'] },
-    { label: 'Federal Tax ID', keys: ['FederalTaxID', 'Federal Tax ID'] },
-    { label: 'Birthday', keys: ['Birthday'] },
-    { label: 'Anniversary', keys: ['Anniversary'] },
-    { label: 'Related Client', keys: ['RelatedClient', 'Related Client'] },
-    { label: 'Related Entity', keys: ['RelatedEntity', 'Related Entity'] },
-    { label: 'Address', keys: ['Address'] },
-    { label: 'Created', keys: ['Created'] },
-    { label: 'Modified By', keys: ['Editor', 'Modified By'] },
-    { label: 'Children', keys: ['Children'] },
-    { label: 'Parent 2', keys: ['Parent 2', 'Parent2', 'Parent_x0020_2'] },
-    { label: 'Parents', keys: ['Parents'] },
-    { label: 'Siblings', keys: ['Siblings'] },
-    { label: 'Spouse', keys: ['Spouse0', 'Spouse'] },
-  ];
-
   const pickValue = (keys: string[]): unknown => {
     for (const key of keys) {
       if (fieldValuesAsText[key] !== undefined) return fieldValuesAsText[key];
@@ -63,7 +46,7 @@ const Summary: React.FC<SummaryProps> = ({ title, item, loading, error }) => {
 
   return (
     <div className={styles.detailCard}>
-      {columns.map(({ label, keys }) => (
+      {SUMMARY_COLUMNS.map(({ label, keys }) => (
         <div key={label} className={styles.detailRow}>
           <div className={styles.detailLabel}>{label}:</div>
           <div className={styles.detailValue}>{formatValue(pickValue(keys))}</div>
