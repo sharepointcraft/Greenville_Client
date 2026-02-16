@@ -19,7 +19,9 @@ export default class GreenVilleClientWebPart extends BaseClientSideWebPart<IGree
   public render(): void {
     const element: React.ReactElement<IGreenVilleClientProps> = React.createElement(
       GreenVilleClient,
-      {}
+      {
+        webUrl: this.context.pageContext.web.absoluteUrl
+      }
     );
 
     ReactDom.render(element, this.domElement);

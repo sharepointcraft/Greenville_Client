@@ -1,0 +1,27 @@
+.container {
+  display: grid;
+  gap: 8px;
+}
+
+.documentRow {
+  display: grid;
+  grid-template-columns: 1fr 120px 120px;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #ececec;
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: #fafafa;
+}
+
+.documentName {
+  font-size: 13px;
+  color: #333;
+  font-weight: 600;
+}
+
+.documentMeta {
+  font-size: 12px;
+  color: #666;
+  text-align: right;
+}
