@@ -18,10 +18,42 @@
   font-size: 13px;
   color: #333;
   font-weight: 600;
+  
+  a {
+    color: #0078d4;
+    text-decoration: none;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }
 
 .documentMeta {
   font-size: 12px;
   color: #666;
   text-align: right;
+}
+
+.loading {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.error {
+  padding: 20px;
+  text-align: center;
+  color: #d13438;
+  background-color: #fdeded;
+  border: 1px solid #f8d7da;
+  border-radius: 4px;
+}
+
+.emptyState {
+  padding: 40px 20px;
+  text-align: center;
+  color: #666;
+  font-style: italic;
 }

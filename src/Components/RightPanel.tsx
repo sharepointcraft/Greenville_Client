@@ -32,7 +32,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId }) => {
         return <SummaryTab webUrl={webUrl} clientId={clientId} />;
 
       case 'Documents':
-        return <DocumentsTab />;
+        return <DocumentsTab webUrl={webUrl} clientId={clientId} />;
 
       case 'Tasks':
         return <TasksTab />;
