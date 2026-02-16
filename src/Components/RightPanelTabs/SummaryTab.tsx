@@ -1,9 +1,12 @@
 import * as React from 'react';
 import styles from './SummaryTab.module.scss';
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const CLIENT_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
+import {
+  TERM_STORE_CONFIG,
+  CLIENTS_LIST_COLUMNS,
+  DISPLAY_LABELS,
+  API_QUERIES,
+  type ClientItem
+} from '../../Constants';
 
 interface SummaryTabProps {
   webUrl: string;
@@ -23,9 +26,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
 
   const loadSummary = async () => {
     const resp = await fetch(
-      `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?` +
-        `$select=*,Children/Title,Siblings/Title,Parents/Title,Spouse0/Title,Author/Title,Editor/Title&` +
-        `$expand=Children,Siblings,Parents,Spouse0,Author,Editor`,
+      `${webUrl}/_api${API_QUERIES.CLIENT_DETAILS(clientId)}`,
       { headers: { Accept: 'application/json;odata=nometadata' } }
     );
 
@@ -35,15 +36,14 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     const clientGuids = new Set<string>();
     const entityGuids = new Set<string>();
 
-    collectTermGuids(data.Client, clientGuids);
     collectTermGuids(data.RelatedClient, clientGuids);
     collectTermGuids(data.RelatedEntity, entityGuids);
 
     if (clientGuids.size) {
-      await loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms);
+      await loadTermSet(clientGuids, TERM_STORE_CONFIG.CLIENT_TERM_SET_ID, setClientTerms);
     }
     if (entityGuids.size) {
-      await loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms);
+      await loadTermSet(entityGuids, TERM_STORE_CONFIG.ENTITY_TERM_SET_ID, setEntityTerms);
     }
   };
 
@@ -55,7 +55,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     setState: React.Dispatch<React.SetStateAction<Record<string, string>>>
   ) => {
     const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${termSetId}')/terms`,
+      `${webUrl}/_api${API_QUERIES.TERM_STORE_TERMS(TERM_STORE_CONFIG.TERM_GROUP_ID, termSetId)}`,
       { headers: { Accept: 'application/json' } }
     );
 
@@ -133,70 +133,70 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
   return (
     <div className={styles.detailCard}>
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Client Name</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.CLIENT_NAME}</div>
         <div className={styles.detailValue}>{renderClientTaxonomy(item.Client)}</div>
 
-        <div className={styles.detailLabel}>Federal Tax ID</div>
-        <div className={styles.detailValue}>{item.FederalTaxID || '—'}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.FEDERAL_TAX_ID}</div>
+        <div className={styles.detailValue}>{item[CLIENTS_LIST_COLUMNS.FEDERAL_TAX_ID] || '—'}</div>
       </div>
 
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Birthday</div>
-        <div className={styles.detailValue}>{renderDate(item.Birthday)}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.BIRTHDAY}</div>
+        <div className={styles.detailValue}>{renderDate(item[CLIENTS_LIST_COLUMNS.BIRTHDAY])}</div>
 
-        <div className={styles.detailLabel}>Anniversary</div>
-        <div className={styles.detailValue}>{renderDate(item.Anniversary)}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.ANNIVERSARY}</div>
+        <div className={styles.detailValue}>{renderDate(item[CLIENTS_LIST_COLUMNS.ANNIVERSARY])}</div>
       </div>
 
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Address</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.ADDRESS}</div>
         <div className={styles.detailValue}>
-          {renderMultiline(item.WorkAddress)}
+          {renderMultiline(item[CLIENTS_LIST_COLUMNS.WORK_ADDRESS])}
         </div>
 
-        <div className={styles.detailLabel}>Aliases</div>
-        <div className={styles.detailValue}>{item.EntityAliases || '—'}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.ALIASES}</div>
+        <div className={styles.detailValue}>{item[CLIENTS_LIST_COLUMNS.ENTITY_ALIASES] || '—'}</div>
       </div>
 
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Marital Status</div>
-        <div className={styles.detailValue}>{item.MaritalStatus || '—'}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.MARITAL_STATUS}</div>
+        <div className={styles.detailValue}>{item[CLIENTS_LIST_COLUMNS.MARITAL_STATUS] || '—'}</div>
 
-        <div className={styles.detailLabel}>Children</div>
-        <div className={styles.detailValue}>{renderLookup(item.Children)}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.CHILDREN}</div>
+        <div className={styles.detailValue}>{renderLookup(item[CLIENTS_LIST_COLUMNS.CHILDREN])}</div>
       </div>
 
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Siblings</div>
-        <div className={styles.detailValue}>{renderLookup(item.Siblings)}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.SIBLINGS}</div>
+        <div className={styles.detailValue}>{renderLookup(item[CLIENTS_LIST_COLUMNS.SIBLINGS])}</div>
 
-        <div className={styles.detailLabel}>Parents</div>
-        <div className={styles.detailValue}>{renderLookup(item.Parents)}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.PARENTS}</div>
+        <div className={styles.detailValue}>{renderLookup(item[CLIENTS_LIST_COLUMNS.PARENTS])}</div>
       </div>
 
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Spouse</div>
-        <div className={styles.detailValue}>{renderLookup(item.Spouse0)}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.SPOUSE}</div>
+        <div className={styles.detailValue}>{renderLookup(item[CLIENTS_LIST_COLUMNS.SPOUSE])}</div>
 
-        <div className={styles.detailLabel}>Related Client</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.RELATED_CLIENT}</div>
         <div className={styles.detailValue}>
-          {renderClientTaxonomy(item.RelatedClient)}
+          {renderClientTaxonomy(item[CLIENTS_LIST_COLUMNS.RELATED_CLIENT])}
         </div>
       </div>
 
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Related Entity</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.RELATED_ENTITY}</div>
         <div className={styles.detailValue}>
-          {renderEntityTaxonomy(item.RelatedEntity)}
+          {renderEntityTaxonomy(item[CLIENTS_LIST_COLUMNS.RELATED_ENTITY])}
         </div>
 
-        <div className={styles.detailLabel}>Created</div>
-        <div className={styles.detailValue}>{renderDate(item.Created)}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.CREATED}</div>
+        <div className={styles.detailValue}>{renderDate(item[CLIENTS_LIST_COLUMNS.CREATED])}</div>
       </div>
 
       <div className={styles.detailRow}>
-        <div className={styles.detailLabel}>Modified By</div>
-        <div className={styles.detailValue}>{item.Editor?.Title || '—'}</div>
+        <div className={styles.detailLabel}>{DISPLAY_LABELS.MODIFIED_BY}</div>
+        <div className={styles.detailValue}>{item[CLIENTS_LIST_COLUMNS.EDITOR]?.Title || '—'}</div>
       </div>
     </div>
   );

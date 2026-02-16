@@ -1,25 +1,23 @@
 import * as React from 'react';
 import styles from './DocumentsTab.module.scss';
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const CLIENT_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
-const DOC_CENTER_URL = 'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter';
+import {
+  TERM_STORE_CONFIG,
+  CLIENTS_LIST_COLUMNS,
+  DOCUMENT_LIBRARY_COLUMNS,
+  SHAREPOINT_SITES,
+  SEARCH_CONFIG,
+  DISPLAY_LABELS,
+  API_QUERIES,
+  type DocumentItem
+} from '../../Constants';
 
 interface DocumentsTabProps {
   webUrl: string;
   clientId: number;
 }
 
-interface Document {
-  name: string;
-  category: string;
-  updatedOn: string;
-  library: string;
-  absoluteUrl: string;
-}
-
 const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
-  const [documents, setDocuments] = React.useState<Document[]>([]);
+  const [documents, setDocuments] = React.useState<DocumentItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
@@ -37,7 +35,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
       // Step 1: Get the client item with RelatedClient field
       const clientResponse = await fetch(
-        `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`,
+        `${webUrl}/_api${API_QUERIES.CLIENT_RELATED_CLIENT(clientId)}`,
         { headers: { Accept: 'application/json;odata=nometadata' } }
       );
 
@@ -50,7 +48,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
       
       // Extract RelatedClient term GUIDs
       const relatedClientGuids = new Set<string>();
-      collectTermGuids(clientData.RelatedClient, relatedClientGuids);
+      collectTermGuids(clientData[CLIENTS_LIST_COLUMNS.RELATED_CLIENT], relatedClientGuids);
 
       console.log('RelatedClient GUIDs:', Array.from(relatedClientGuids));
 
@@ -98,7 +96,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
   const loadClientTerms = async (guids: Set<string>) => {
     const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${CLIENT_TERM_SET_ID}')/terms`,
+      `${webUrl}/_api${API_QUERIES.TERM_STORE_TERMS(TERM_STORE_CONFIG.TERM_GROUP_ID, TERM_STORE_CONFIG.CLIENT_TERM_SET_ID)}`,
       { headers: { Accept: 'application/json' } }
     );
 
@@ -117,21 +115,20 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     setClientTerms(map);
   };
 
-  const searchDocumentsByRelatedClient = async (relatedClientGuids: Set<string>): Promise<Document[]> => {
-    const allDocuments: Document[] = [];
+  const searchDocumentsByRelatedClient = async (relatedClientGuids: Set<string>): Promise<DocumentItem[]> => {
+    const allDocuments: DocumentItem[] = [];
 
     try {
       console.log('Searching for documents with RelatedClient GUIDs:', Array.from(relatedClientGuids));
 
       // Method 1: Try using the SharePoint search with proper managed metadata syntax
-      // For managed metadata fields, we need to use the GUID format
       const guidQueries = Array.from(relatedClientGuids).map(guid => `"${guid}"`).join(' OR ');
       
       // Try different managed property names that SharePoint might use for RelatedClient
       const searchQueries = [
-        `RelatedClientOWSTAXID:(${guidQueries}) AND contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"`,
-        `RelatedClient:(${guidQueries}) AND contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"`,
-        `"${Array.from(relatedClientGuids).join('" OR "')}" AND contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"`
+        `${DOCUMENT_LIBRARY_COLUMNS.RELATED_CLIENT_OWS_TAX_ID}:(${guidQueries}) AND contentclass:${SEARCH_CONFIG.CONTENT_CLASS_DOCUMENT} AND path:"${SHAREPOINT_SITES.DOC_CENTER}/*"`,
+        `${DOCUMENT_LIBRARY_COLUMNS.RELATED_CLIENT}:(${guidQueries}) AND contentclass:${SEARCH_CONFIG.CONTENT_CLASS_DOCUMENT} AND path:"${SHAREPOINT_SITES.DOC_CENTER}/*"`,
+        `"${Array.from(relatedClientGuids).join('" OR "')}" AND contentclass:${SEARCH_CONFIG.CONTENT_CLASS_DOCUMENT} AND path:"${SHAREPOINT_SITES.DOC_CENTER}/*"`
       ];
 
       for (const query of searchQueries) {
@@ -139,7 +136,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         
         try {
           const searchResponse = await fetch(
-            `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType'`,
+            `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=${SEARCH_CONFIG.ROW_LIMIT}&selectproperties='${DOCUMENT_LIBRARY_COLUMNS.TITLE},${DOCUMENT_LIBRARY_COLUMNS.PATH},${DOCUMENT_LIBRARY_COLUMNS.MODIFIED},${DOCUMENT_LIBRARY_COLUMNS.PARENT_LINK},${DOCUMENT_LIBRARY_COLUMNS.SITE_TITLE},${DOCUMENT_LIBRARY_COLUMNS.FILE_TYPE}'`,
             { headers: { Accept: 'application/json;odata=nometadata' } }
           );
 
@@ -151,10 +148,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
             results.forEach((row: any) => {
               const cells = row.Cells;
-              const title = cells.find((cell: any) => cell.Key === 'Title')?.Value;
-              const path = cells.find((cell: any) => cell.Key === 'Path')?.Value;
-              const lastModified = cells.find((cell: any) => cell.Key === 'LastModifiedTime')?.Value;
-              const fileType = cells.find((cell: any) => cell.Key === 'FileType')?.Value;
+              const title = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.TITLE)?.Value;
+              const path = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.PATH)?.Value;
+              const lastModified = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.MODIFIED)?.Value;
+              const fileType = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.FILE_TYPE)?.Value;
 
               if (title && path) {
                 const pathParts = path.split('/');
@@ -188,7 +185,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         // Try to get all documents from Prod-docCenter and filter client-side
         try {
           const allDocsResponse = await fetch(
-            `${webUrl}/_api/search/query?querytext='contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"'&rowlimit=1000&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,RelatedClientOWSTAXID'`,
+            `${webUrl}/_api/search/query?querytext='contentclass:${SEARCH_CONFIG.CONTENT_CLASS_DOCUMENT} AND path:"${SHAREPOINT_SITES.DOC_CENTER}/*"'&rowlimit=1000&selectproperties='${DOCUMENT_LIBRARY_COLUMNS.TITLE},${DOCUMENT_LIBRARY_COLUMNS.PATH},${DOCUMENT_LIBRARY_COLUMNS.MODIFIED},${DOCUMENT_LIBRARY_COLUMNS.PARENT_LINK},${DOCUMENT_LIBRARY_COLUMNS.SITE_TITLE},${DOCUMENT_LIBRARY_COLUMNS.RELATED_CLIENT_OWS_TAX_ID}'`,
             { headers: { Accept: 'application/json;odata=nometadata' } }
           );
 
@@ -200,10 +197,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
             allResults.forEach((row: any) => {
               const cells = row.Cells;
-              const title = cells.find((cell: any) => cell.Key === 'Title')?.Value;
-              const path = cells.find((cell: any) => cell.Key === 'Path')?.Value;
-              const lastModified = cells.find((cell: any) => cell.Key === 'LastModifiedTime')?.Value;
-              const relatedClientTaxId = cells.find((cell: any) => cell.Key === 'RelatedClientOWSTAXID')?.Value;
+              const title = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.TITLE)?.Value;
+              const path = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.PATH)?.Value;
+              const lastModified = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.MODIFIED)?.Value;
+              const relatedClientTaxId = cells.find((cell: any) => cell.Key === DOCUMENT_LIBRARY_COLUMNS.RELATED_CLIENT_OWS_TAX_ID)?.Value;
 
               // Check if this document has any of our target RelatedClient GUIDs
               if (title && path && relatedClientTaxId) {
