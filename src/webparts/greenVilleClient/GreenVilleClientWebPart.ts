@@ -20,8 +20,7 @@ export default class GreenVilleClientWebPart extends BaseClientSideWebPart<IGree
     const element: React.ReactElement<IGreenVilleClientProps> = React.createElement(
       GreenVilleClient,
       {
-        spHttpClient: this.context.spHttpClient,
-        siteUrl: this.context.pageContext.web.absoluteUrl,
+        webUrl: this.context.pageContext.web.absoluteUrl
       }
     );
 

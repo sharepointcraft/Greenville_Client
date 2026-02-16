@@ -3,90 +3,120 @@ import { SPHttpClient } from '@microsoft/sp-http';
 import styles from './LeftPanel.module.scss';
 
 interface LeftPanelProps {
-  selectedName?: string;
-  onSelect: (name: string) => void;
-  spHttpClient: SPHttpClient;
-  siteUrl: string;
-  listTitle?: string;
+  webUrl: string;
+  selectedClientId: number | null;
+  onSelect: (id: number) => void;
 }
 
-const LeftPanel: React.FC<LeftPanelProps> = ({
-  selectedName,
-  onSelect,
-  spHttpClient,
-  siteUrl,
-  listTitle = 'Clients',
-}) => {
-  const [clients, setClients] = React.useState<string[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+interface ITerm {
+  id: string;
+  label: string;
+}
+
+interface IClientUsage {
+  itemId: number;
+  termGuid: string;
+}
+
+const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
+const TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
+
+const LeftPanel: React.FC<LeftPanelProps> = ({ webUrl, selectedClientId, onSelect }) => {
+  const [items, setItems] = React.useState<
+    { id: number; label: string }[]
+  >([]);
 
   React.useEffect(() => {
-    const fetchClients = async (): Promise<void> => {
-      setLoading(true);
-      setError(null);
+    loadClientsFromTerms();
+  }, []);
 
-      const safeListTitle = listTitle.replace(/'/g, "''");
-      const url = `${siteUrl}/_api/web/lists/getbytitle('${safeListTitle}')/items?$select=Title&$orderby=Title asc&$top=200`;
-
-      try {
-        const response = await spHttpClient.get(url, SPHttpClient.configurations.v1);
-        if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status}`);
+  const loadClientsFromTerms = async () => {
+    try {
+      /** 1️⃣ Load Clients list items (used terms only) */
+      const listResp = await fetch(
+        `${webUrl}/_api/web/lists/getByTitle('Clients')/items` +
+          `?$select=Id,Client`,
+        {
+          headers: { Accept: 'application/json;odata=nometadata' }
         }
-        const data = await response.json();
-        const names: string[] = (data?.value ?? [])
-          .map((item: { Title?: string }) => item.Title)
-          .filter(Boolean);
+      );
 
-        setClients(names);
+      const listData = await listResp.json();
 
-        if (!selectedName && names.length > 0) {
-          onSelect(names[0]);
-        }
-      } catch (err) {
-        setError((err as Error).message);
-        setClients([]);
-      } finally {
-        setLoading(false);
+      const usedTerms: IClientUsage[] = (listData.value || [])
+        .map((item: any) => {
+          const term = item.Client;
+          if (!term?.TermGuid) return null;
+          return {
+            itemId: item.Id,
+            termGuid: term.TermGuid
+          };
+        })
+        .filter(Boolean);
+
+      if (!usedTerms.length) {
+        setItems([]);
+        return;
       }
-    };
 
-    fetchClients();
-  }, [listTitle, onSelect, selectedName, siteUrl, spHttpClient]);
+      /** 2️⃣ Load Term Store terms */
+      const termResp = await fetch(
+        `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${TERM_SET_ID}')/terms`,
+        {
+          headers: { Accept: 'application/json' }
+        }
+      );
+
+      const termData = await termResp.json();
+
+      /** 3️⃣ Match terms used in list */
+      const termMap = new Map<string, string>();
+      termData.value.forEach((t: any) => {
+        termMap.set(t.id.toLowerCase(), t.labels[0].name);
+      });
+
+      const finalItems = usedTerms
+        .filter(u => termMap.has(u.termGuid.toLowerCase()))
+        .map(u => ({
+          id: u.itemId,
+          label: termMap.get(u.termGuid.toLowerCase())!
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      setItems(finalItems);
+
+      if (finalItems.length && selectedClientId === null) {
+        onSelect(finalItems[0].id);
+      }
+    } catch (err) {
+      console.error('LeftPanel load error:', err);
+      setItems([]);
+    }
+  };
 
   return (
     <div className={styles.leftPanel}>
       <div className={styles.panelHeader}>
         <span className={styles.headerTitle}>Clients</span>
-        <button className={styles.addButton} type="button">+ Add New</button>
+        <button className={styles.addButton} type="button">
+          + Add New
+        </button>
       </div>
 
-      {loading && <div className={styles.clientList}>Loading clients…</div>}
-      {error && <div className={styles.clientList}>Error loading clients: {error}</div>}
-
-      {!loading && !error && (
-        <div className={styles.clientList} role="list">
-          {clients.map((client, index) => {
-            const isActive = client === selectedName || (!selectedName && index === 0);
-            return (
-              <button
-                key={`${client}-${index}`}
-                type="button"
-                className={`${styles.clientItem} ${isActive ? styles.active : ''}`}
-                role="listitem"
-                onClick={() => onSelect(client)}
-              >
-                <span className={styles.clientName}>{client}</span>
-              </button>
-            );
-          })}
-
-          {clients.length === 0 && (
-            <div className={styles.placeholder}>No clients found.</div>
-          )}
-        </div>
-      )}
+      <div className={styles.clientList}>
+        {items.map(client => (
+          <button
+            key={client.id}
+            type="button"
+            className={`${styles.clientItem} ${
+              client.id === selectedClientId ? styles.active : ''
+            }`}
+            onClick={() => onSelect(client.id)}
+          >
+            {client.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 };
