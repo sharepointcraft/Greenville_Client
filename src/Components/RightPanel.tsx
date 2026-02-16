@@ -17,25 +17,45 @@ const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId }) => {
   const [activeTab, setActiveTab] = React.useState<TabKey>('Summary');
 
   if (!clientId) {
-    return <div>Select a client</div>;
+    return (
+      <div className={styles.rightPanel}>
+        <div className={styles.emptyState}>
+          Select a client to view details
+        </div>
+      </div>
+    );
   }
 
   const renderContent = () => {
-    if (activeTab === 'Summary') {
-      return <SummaryTab webUrl={webUrl} clientId={clientId} />;
+    switch (activeTab) {
+      case 'Summary':
+        return <SummaryTab webUrl={webUrl} clientId={clientId} />;
+
+      case 'Documents':
+        return <DocumentsTab />;
+
+      case 'Tasks':
+        return <TasksTab />;
+
+      case 'Entities':
+        return <EntitiesTab />;
+
+      default:
+        return null;
     }
-    if (activeTab === 'Documents') return <DocumentsTab />;
-    if (activeTab === 'Tasks') return <TasksTab />;
-    return <EntitiesTab />;
   };
 
   return (
     <div className={styles.rightPanel}>
+      {/* Tabs */}
       <div className={styles.tabs}>
         {tabs.map(tab => (
           <button
             key={tab}
-            className={`${styles.tab} ${activeTab === tab ? styles.activeTab : ''}`}
+            type="button"
+            className={`${styles.tab} ${
+              activeTab === tab ? styles.activeTab : ''
+            }`}
             onClick={() => setActiveTab(tab)}
           >
             {tab}
@@ -43,7 +63,10 @@ const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId }) => {
         ))}
       </div>
 
-      <div className={styles.tabContent}>{renderContent()}</div>
+      {/* Content */}
+      <div className={styles.tabContent}>
+        {renderContent()}
+      </div>
     </div>
   );
 };

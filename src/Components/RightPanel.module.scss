@@ -65,6 +65,26 @@
   padding: 16px;
   overflow-x: auto;
 }
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+
+  font-size: 14px;
+  color: #6b6b6b;
+
+  background-color: #faf9f8;
+  border: 1px dashed #d2d0ce;
+  border-radius: 4px;
+
+  text-align: center;
+  padding: 24px;
+
+  /* subtle SharePoint-like feel */
+  font-style: italic;
+}
+
 
 @media (max-width: 860px) {
   .rightPanel {

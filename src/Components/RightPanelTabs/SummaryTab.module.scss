@@ -35,3 +35,48 @@
 .detailSpacer {
   height: 1px;
 }
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+
+  font-size: 14px;
+  color: #605e5c;
+
+  background-color: #faf9f8;
+  border: 1px solid #edebe9;
+  border-radius: 4px;
+
+  /* subtle animation */
+  animation: fadePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes fadePulse {
+  0% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.4;
+  }
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+
+  font-size: 14px;
+  color: #a4262c;
+
+  background-color: #fde7e9;
+  border: 1px solid #f1707b;
+  border-radius: 4px;
+
+  text-align: center;
+  padding: 16px;
+}
