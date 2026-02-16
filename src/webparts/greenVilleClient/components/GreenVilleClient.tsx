@@ -34,8 +34,6 @@ export default class GreenVilleClient extends React.Component<
             webUrl={webUrl}
             selectedClientId={selectedClientId}
             onSelect={this.handleSelectClient}
-            spHttpClient={spHttpClient}
-            siteUrl={siteUrl}
           />
         </div>
 

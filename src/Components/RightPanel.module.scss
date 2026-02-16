@@ -7,22 +7,29 @@
   width: 100%;
   box-sizing: border-box;
 }
-
+ 
 .personTitle {
   margin: 0 0 14px;
   font-size: 26px;
   font-weight: 600;
   color: #333;
 }
-
+ 
 .tabs {
   display: flex;
   gap: 10px;
   border-bottom: 1px solid #dedede;
   margin-bottom: 16px;
   overflow-x: auto;
+  overflow-y: hidden; /* prevent vertical scroll UI */
   position: relative;
   flex-wrap: wrap;
+  -ms-overflow-style: none; /* hide scrollbar buttons in Edge/IE */
+  scrollbar-width: none; /* hide scrollbar buttons in Firefox */
+}
+
+.tabs::-webkit-scrollbar {
+  display: none; /* hide scrollbar buttons in Chrome/Edge */
 }
 
 .tab {
@@ -38,11 +45,11 @@
   position: relative;
   top: 1px;
 }
-
+ 
 .tab:hover {
   color: #333;
 }
-
+ 
 .activeTab {
   color: #3a9a3d;
   font-weight: 600;
@@ -52,11 +59,11 @@
   box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.08);
   z-index: 1;
 }
-
+ 
 .tab:not(.activeTab) {
   box-shadow: none;
 }
-
+ 
 .tabContent {
   min-height: 200px;
   border: 1px solid #dedede;
@@ -66,21 +73,81 @@
   overflow-x: auto;
 }
 
+.placeholder {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #666;
+  text-align: center;
+  background: #fafafa;
+  border: 1px dashed #e0e0e0;
+  border-radius: 4px;
+}
+
+.detailCard {
+  background: linear-gradient(180deg, #fafafa 0%, #ffffff 100%);
+  border: 1px solid #ededed;
+  border-radius: 4px;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+}
+
+.detailRow {
+  display: grid;
+  grid-template-columns: 150px 1fr 150px 1fr;
+  gap: 8px 14px;
+  align-items: start;
+  padding: 6px 0;
+  border-bottom: 1px solid #f2f2f2;
+}
+
+.detailRow:last-child {
+  border-bottom: none;
+}
+
+.detailLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #777;
+}
+
+.detailValue {
+  font-size: 13px;
+  color: #333;
+}
+
+.detailSpacer {
+  height: 1px;
+}
+
 @media (max-width: 860px) {
   .rightPanel {
     padding: 14px 16px;
   }
-
+ 
   .tabs {
     gap: 6px;
   }
-
+ 
   .tab {
     padding: 8px 10px;
     font-size: 12px;
   }
-
+ 
   .tabContent {
     padding: 12px;
+  }
+
+  .detailCard {
+    padding: 14px;
+  }
+
+  .detailRow {
+    grid-template-columns: 120px 1fr;
+  }
+
+  .detailSpacer {
+    display: none;
   }
 }
