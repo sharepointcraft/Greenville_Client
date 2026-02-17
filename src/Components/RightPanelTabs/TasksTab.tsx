@@ -27,17 +27,6 @@ const TasksTab: React.FC<TasksTabProps> = ({
   const [priorityFilter, setPriorityFilter] = React.useState<PriorityFilter>('ALL');
   const [showAddPopup, setShowAddPopup] = React.useState(false);
 
-  React.useEffect(() => {
-    if (!clientId || !clientTermGuid) {
-      setTasks([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    void loadTasks();
-  }, [clientId, clientTermGuid]);
-
   /* ---------------- HELPERS ---------------- */
 
 const parseTaxonomyLabel = (value?: any): string => {
@@ -319,6 +308,17 @@ const loadTasks = async () => {
     setLoading(false);
   }
 };
+
+  React.useEffect(() => {
+    if (!clientId || !clientTermGuid) {
+      setTasks([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    void loadTasks();
+  }, [clientId, clientTermGuid]);
 
 
 

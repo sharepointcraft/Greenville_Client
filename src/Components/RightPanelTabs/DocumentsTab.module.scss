@@ -4,6 +4,8 @@
   flex-direction: column;
   gap: 8px;
   // padding: 8px;
+
+  scrollbar-width: thin;
  
   /* Hide scrollbar arrows */
   &::-webkit-scrollbar-button {
@@ -14,8 +16,6 @@
   &::-webkit-scrollbar-corner {
     display: none;
   }
- 
-  scrollbar-width: thin;
  
   /* Hide any elements that might be arrow buttons */
   button[title*="scroll"],
@@ -72,7 +72,7 @@
   display: flex;
   gap: 16px;
   margin-bottom: 6px;
-  max-width: 470px;
+  // max-width: 470px;
 }
  
 .filterButton {
@@ -104,14 +104,12 @@
   overflow-x: auto;
   border: 1px solid #d1d1d1;
   border-radius: 2px;
+  scrollbar-width: none;
  
   /* Hide scrollbar arrows in webkit browsers */
   &::-webkit-scrollbar-button {
     display: none;
   }
- 
-  /* Hide scrollbar arrows in Firefox */
-  scrollbar-width: none;
 }
  
 .documentsTable {

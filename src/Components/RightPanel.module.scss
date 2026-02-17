@@ -20,16 +20,9 @@
   gap: 10px;
   border-bottom: 1px solid #dedede;
   margin-bottom: 16px;
-  overflow-x: auto;
+  // overflow-x: auto;
   position: relative;
   flex-wrap: wrap;
-  
-  /* Hide scrollbar arrows */
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
-  
-  scrollbar-width: thin;
 }
 
 .tab {
@@ -71,13 +64,6 @@
   background: #fff;
   //padding: 16px;
   overflow-x: auto;
-  
-  /* Hide scrollbar arrows */
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
-  
-  scrollbar-width: thin;
 }
 .emptyState {
   display: flex;

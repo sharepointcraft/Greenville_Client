@@ -3,7 +3,7 @@
   "solution": {
     "name": "greenville-client-client-side-solution",
     "id": "fd5c571e-ca88-418c-abdf-6f90a7792eae",
-    "version": "1.0.0.0",
+    "version": "1.0.0.1",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": true,
     "isDomainIsolated": false,

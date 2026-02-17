@@ -29,60 +29,6 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
   const [activeFilter, setActiveFilter] = React.useState('All Documents');
   const [activeSubTab, setActiveSubTab] = React.useState('All Documents');
 
-  React.useEffect(() => {
-    loadDocuments();
-  }, [clientId]);
- 
-  const loadDocuments = async () => {
-    try {
-      setLoading(true);
-      setError(null);
- 
-      console.log('Loading documents for clientId:', clientId);
- 
-      // Step 1: Get the client item with RelatedClient field
-      const clientResponse = await fetch(
-        `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`,
-        { headers: { Accept: 'application/json;odata=nometadata' } }
-      );
- 
-      if (!clientResponse.ok) {
-        throw new Error(`Failed to fetch client data: ${clientResponse.status} ${clientResponse.statusText}`);
-      }
- 
-      const clientData = await clientResponse.json();
-      console.log('Client data:', clientData);
-     
-      // Extract RelatedClient term GUIDs
-      const relatedClientGuids = new Set<string>();
-      collectTermGuids(clientData.RelatedClient, relatedClientGuids);
- 
-      console.log('RelatedClient GUIDs:', Array.from(relatedClientGuids));
- 
-      if (relatedClientGuids.size === 0) {
-        console.log('No RelatedClient GUIDs found for this client');
-        setDocuments([]);
-        setLoading(false);
-        return;
-      }
- 
-      // Step 2: Load client terms to get the actual names
-      await loadClientTerms(relatedClientGuids);
-      console.log('Client terms loaded:', clientTerms);
- 
-      // Step 3: Search for documents across all libraries in Prod-docCenter
-      const foundDocuments = await searchDocumentsByRelatedClient(relatedClientGuids);
-      console.log('Found documents:', foundDocuments);
-      setDocuments(foundDocuments);
- 
-    } catch (err) {
-      console.error('Error in loadDocuments:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load documents');
-    } finally {
-      setLoading(false);
-    }
-  };
- 
   const collectTermGuids = (value: any, set: Set<string>) => {
     if (!value) return;
  
@@ -288,6 +234,60 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     console.log('Final documents found:', allDocuments);
     return allDocuments;
   };
+
+  const loadDocuments = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('Loading documents for clientId:', clientId);
+
+      // Step 1: Get the client item with RelatedClient field
+      const clientResponse = await fetch(
+        `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`,
+        { headers: { Accept: 'application/json;odata=nometadata' } }
+      );
+
+      if (!clientResponse.ok) {
+        throw new Error(`Failed to fetch client data: ${clientResponse.status} ${clientResponse.statusText}`);
+      }
+
+      const clientData = await clientResponse.json();
+      console.log('Client data:', clientData);
+      
+      // Extract RelatedClient term GUIDs
+      const relatedClientGuids = new Set<string>();
+      collectTermGuids(clientData.RelatedClient, relatedClientGuids);
+
+      console.log('RelatedClient GUIDs:', Array.from(relatedClientGuids));
+
+      if (relatedClientGuids.size === 0) {
+        console.log('No RelatedClient GUIDs found for this client');
+        setDocuments([]);
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Load client terms to get the actual names
+      await loadClientTerms(relatedClientGuids);
+      console.log('Client terms loaded:', clientTerms);
+
+      // Step 3: Search for documents across all libraries in Prod-docCenter
+      const foundDocuments = await searchDocumentsByRelatedClient(relatedClientGuids);
+      console.log('Found documents:', foundDocuments);
+      setDocuments(foundDocuments);
+
+    } catch (err) {
+      console.error('Error in loadDocuments:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    void loadDocuments();
+  }, [clientId]);
  
 const getStatusClass = (status: string): string => {
   const statusMap: Record<string, string> = {

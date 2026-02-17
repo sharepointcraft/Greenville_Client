@@ -27,10 +27,6 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   >([]);
   const [showAddPopup, setShowAddPopup] = React.useState(false);
 
-  React.useEffect(() => {
-    loadClientsFromTerms();
-  }, []);
-
   const loadClientsFromTerms = async () => {
     try {
       /* 1️⃣ Load Clients list items */
@@ -90,6 +86,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       setItems([]);
     }
   };
+
+  React.useEffect(() => {
+    void loadClientsFromTerms();
+  }, []);
 
   return (
     <div className={styles.leftPanel}>
