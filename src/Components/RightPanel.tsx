@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { SPHttpClient } from '@microsoft/sp-http';
 import styles from './RightPanel.module.scss';
 import SummaryTab from './RightPanelTabs/SummaryTab';
 import DocumentsTab from './RightPanelTabs/DocumentsTab';

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { SPHttpClient } from '@microsoft/sp-http';
 import styles from './LeftPanel.module.scss';
 
 interface LeftPanelProps {
