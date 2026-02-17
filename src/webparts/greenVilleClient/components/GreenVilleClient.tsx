@@ -6,6 +6,7 @@ import RightPanel from '../../../Components/RightPanel';
 
 interface IGreenVilleClientState {
   selectedClientId: number | null;
+  selectedClientTermGuid: string | null;
 }
 
 export default class GreenVilleClient extends React.Component<
@@ -17,13 +18,18 @@ export default class GreenVilleClient extends React.Component<
   public constructor(props: IGreenVilleClientProps) {
     super(props);
     this.state = {
-      selectedClientId: null
+      selectedClientId: null,
+      selectedClientTermGuid: null
     };
   }
 
-  private handleSelectClient = (id: number): void => {
-    this.setState({ selectedClientId: id });
-  };
+private handleSelectClient = (id: number, termGuid: string): void => {
+  this.setState({
+    selectedClientId: id,
+    selectedClientTermGuid: termGuid
+  });
+};
+
 
   public componentDidMount(): void {
     // Hide SharePoint chrome controls
@@ -49,7 +55,7 @@ export default class GreenVilleClient extends React.Component<
 
   public render(): React.ReactElement<IGreenVilleClientProps> {
     const { webUrl } = this.props;
-    const { selectedClientId } = this.state;
+    const { selectedClientId, selectedClientTermGuid } = this.state;
 
     return (
       <div className={styles.layout}>
@@ -62,7 +68,11 @@ export default class GreenVilleClient extends React.Component<
         </div>
 
         <div className={`${styles.rightColumn} ${styles.panelWrapper}`}>
-          <RightPanel webUrl={webUrl} clientId={selectedClientId} />
+          <RightPanel
+            webUrl={webUrl}
+            clientId={selectedClientId}
+            clientTermGuid={selectedClientTermGuid}
+          />
         </div>
       </div>
     );

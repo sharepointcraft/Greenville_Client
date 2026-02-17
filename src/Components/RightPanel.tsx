@@ -11,9 +11,10 @@ type TabKey = (typeof tabs)[number];
 interface RightPanelProps {
   webUrl: string;
   clientId: number | null;
+  clientTermGuid: string | null;
 }
 
-const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId, clientTermGuid }) => {
   const [activeTab, setActiveTab] = React.useState<TabKey>('Summary');
 
   if (!clientId) {
@@ -31,11 +32,11 @@ const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId }) => {
       case 'Summary':
         return <SummaryTab webUrl={webUrl} clientId={clientId} />;
 
-      case 'Documents':
+case 'Documents':
         return <DocumentsTab webUrl={webUrl} clientId={clientId} />;
 
       case 'Tasks':
-        return <TasksTab />;
+        return clientTermGuid ? <TasksTab webUrl={webUrl} clientId={clientId!} clientTermGuid={clientTermGuid}/> : null;
 
       case 'Entities':
         return <EntitiesTab />;
