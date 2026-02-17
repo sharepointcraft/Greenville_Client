@@ -27,7 +27,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
   const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = React.useState('');
   const [activeFilter, setActiveFilter] = React.useState('All Documents');
- 
+  const [activeSubTab, setActiveSubTab] = React.useState('All Documents');
+
   React.useEffect(() => {
     loadDocuments();
   }, [clientId]);
@@ -299,27 +300,31 @@ const getStatusClass = (status: string): string => {
   };
   return statusMap[status.toLowerCase()] || '';
 };
- 
-const filterButtons = [
-  'All Documents'
-];
- 
+
+const subTabs = ['All Documents', 'Draft', 'Approval', 'Signature', 'Hold', 'Final', 'Identification'];
+
 const filteredDocuments = documents.filter(doc => {
   const matchesSearch = searchQuery === '' ||
     doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.activity.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.entity.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.modifiedBy.toLowerCase().includes(searchQuery.toLowerCase());
- 
-  const matchesFilter = activeFilter === 'All Documents';
- 
-  return matchesSearch && matchesFilter;
+
+  const matchesSubTab = activeSubTab === 'All Documents' || 
+    (activeSubTab === 'Draft' && doc.status.toLowerCase() === 'draft') ||
+    (activeSubTab === 'Approval' && doc.status.toLowerCase() === 'approval') ||
+    (activeSubTab === 'Signature' && doc.status.toLowerCase() === 'signature') ||
+    (activeSubTab === 'Hold' && doc.status.toLowerCase() === 'hold') ||
+    (activeSubTab === 'Final' && doc.status.toLowerCase() === 'final') ||
+    (activeSubTab === 'Identification' && doc.status.toLowerCase() === 'identification');
+
+  return matchesSearch && matchesSubTab;
 });
- 
+
 const clearSearch = () => {
   setSearchQuery('');
 };
- 
+
 if (loading) {
   return <div className={styles.loading}>Loading documents…</div>;
 }
@@ -339,66 +344,63 @@ return (
       <div className={styles.searchBar}>
         <input
           type="text"
-          placeholder="Search Documents"
+          placeholder="Search for documents"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className={styles.searchInput}
         />
-        {searchQuery && (
-          <button onClick={clearSearch} className={styles.clearButton}>
+                  <button onClick={clearSearch} className={styles.clearButton}>
             Clear Search
           </button>
-        )}
+        </div>
       </div>
-    </div>
  
     {/* Filter Buttons */}
     <div className={styles.filterSection}>
-      {filterButtons.map((filter) => (
+      {subTabs.map((tab) => (
         <button
-          key={filter}
+          key={tab}
           className={`${styles.filterButton} ${
-            activeFilter === filter ? styles.activeFilter : ''
+            activeSubTab === tab ? styles.activeFilter : ''
           }`}
-          onClick={() => setActiveFilter(filter)}
+          onClick={() => setActiveSubTab(tab)}
         >
-          {filter}
+          {tab}
         </button>
       ))}
     </div>
  
     {/* Documents Table */}
-    <div className={styles.tableContainer}>
-      <table className={styles.documentsTable}>
-        <thead>
-          <tr>
-            <th>Document Name</th>
-            <th>Activity</th>
-            <th>Entity</th>
-            <th>Status</th>
-            <th>Modified Date</th>
-            <th>Modified By</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredDocuments.map((doc, index) => (
-            <tr key={`${doc.absoluteUrl}-${index}`}>
-              <td>
-                <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer" className={styles.documentLink}>
-                  {doc.name}
-                </a>
-              </td>
-              <td>{doc.activity}</td>
-              <td>{doc.entity}</td>
-              <td>
-                {doc.status || '-'}
-              </td>
-              <td>{doc.modifiedDate}</td>
-              <td>{doc.modifiedBy}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className={styles.table}>
+      <div className={styles.headerRow}>
+        <div>Document Name</div>
+        <div>Activity</div>
+        <div>Entity</div>
+        <div>Status</div>
+        <div>Modified Date</div>
+        <div>Modified By</div>
+      </div>
+
+      <div className={styles.bodyRows}>
+        {!filteredDocuments.length && (
+          <div className={styles.noData}>No documents found</div>
+        )}
+
+        {filteredDocuments.map((doc, index) => (
+          <div key={`${doc.absoluteUrl}-${index}`} className={styles.dataRow}>
+            <div className={styles.link}>
+              <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer">
+                {doc.name}
+              </a>
+            </div>
+            <div>{doc.activity}</div>
+            <div>{doc.entity}</div>
+            <div>{doc.status || '-'}</div>
+            <div>{doc.modifiedDate}</div>
+            <div>{doc.modifiedBy}</div>
+          </div>
+        ))}
+      </div>
     </div>
   </div>
   );
