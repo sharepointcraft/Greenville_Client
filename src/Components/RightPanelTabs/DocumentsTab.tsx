@@ -12,9 +12,11 @@ interface DocumentsTabProps {
 
 interface Document {
   name: string;
-  category: string;
-  updatedOn: string;
-  library: string;
+  activity: string;
+  entity: string;
+  status: string;
+  modifiedDate: string;
+  modifiedBy: string;
   absoluteUrl: string;
 }
 
@@ -23,6 +25,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [activeFilter, setActiveFilter] = React.useState('All Documents');
 
   React.useEffect(() => {
     loadDocuments();
@@ -139,7 +143,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         
         try {
           const searchResponse = await fetch(
-            `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType'`,
+            `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy'`,
             { headers: { Accept: 'application/json;odata=nometadata' } }
           );
 
@@ -155,6 +159,26 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
               const path = cells.find((cell: any) => cell.Key === 'Path')?.Value;
               const lastModified = cells.find((cell: any) => cell.Key === 'LastModifiedTime')?.Value;
               const fileType = cells.find((cell: any) => cell.Key === 'FileType')?.Value;
+              const author = cells.find((cell: any) => cell.Key === 'Author')?.Value;
+              const editor = cells.find((cell: any) => cell.Key === 'Editor')?.Value;
+              const modifiedBy = cells.find((cell: any) => cell.Key === 'ModifiedBy')?.Value;
+
+              // Extract user name from SharePoint user field format
+              const extractUserName = (userField: any): string => {
+                if (!userField) return 'Unknown';
+                if (typeof userField === 'string') {
+                  // SharePoint user fields are often in format "i:0#.f|membership|user@domain.com"
+                  const parts = userField.split('|');
+                  if (parts.length > 1) {
+                    const email = parts[parts.length - 1];
+                    return email.includes('@') ? email.split('@')[0] : email;
+                  }
+                  return userField;
+                }
+                return userField;
+              };
+
+              const finalModifiedBy = extractUserName(modifiedBy || editor || author);
 
               if (title && path) {
                 const pathParts = path.split('/');
@@ -162,9 +186,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
                 allDocuments.push({
                   name: title,
-                  category: libraryName,
-                  updatedOn: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
-                  library: libraryName,
+                  activity: libraryName,
+                  entity: libraryName,
+                  status: '',
+                  modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
+                  modifiedBy: finalModifiedBy,
                   absoluteUrl: path
                 });
               }
@@ -188,7 +214,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         // Try to get all documents from Prod-docCenter and filter client-side
         try {
           const allDocsResponse = await fetch(
-            `${webUrl}/_api/search/query?querytext='contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"'&rowlimit=1000&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,RelatedClientOWSTAXID'`,
+            `${webUrl}/_api/search/query?querytext='contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"'&rowlimit=1000&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,RelatedClientOWSTAXID,Author,Editor,ModifiedBy'`,
             { headers: { Accept: 'application/json;odata=nometadata' } }
           );
 
@@ -204,6 +230,26 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
               const path = cells.find((cell: any) => cell.Key === 'Path')?.Value;
               const lastModified = cells.find((cell: any) => cell.Key === 'LastModifiedTime')?.Value;
               const relatedClientTaxId = cells.find((cell: any) => cell.Key === 'RelatedClientOWSTAXID')?.Value;
+              const author = cells.find((cell: any) => cell.Key === 'Author')?.Value;
+              const editor = cells.find((cell: any) => cell.Key === 'Editor')?.Value;
+              const modifiedBy = cells.find((cell: any) => cell.Key === 'ModifiedBy')?.Value;
+
+              // Extract user name from SharePoint user field format
+              const extractUserName = (userField: any): string => {
+                if (!userField) return 'Unknown';
+                if (typeof userField === 'string') {
+                  // SharePoint user fields are often in format "i:0#.f|membership|user@domain.com"
+                  const parts = userField.split('|');
+                  if (parts.length > 1) {
+                    const email = parts[parts.length - 1];
+                    return email.includes('@') ? email.split('@')[0] : email;
+                  }
+                  return userField;
+                }
+                return userField;
+              };
+
+              const finalModifiedBy = extractUserName(modifiedBy || editor || author);
 
               // Check if this document has any of our target RelatedClient GUIDs
               if (title && path && relatedClientTaxId) {
@@ -218,9 +264,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
                   allDocuments.push({
                     name: title,
-                    category: libraryName,
-                    updatedOn: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
-                    library: libraryName,
+                    activity: libraryName,
+                    entity: libraryName,
+                    status: '',
+                    modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
+                    modifiedBy: finalModifiedBy,
                     absoluteUrl: path
                   });
                 }
@@ -240,32 +288,119 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     return allDocuments;
   };
 
-  if (loading) {
-    return <div className={styles.loading}>Loading documents…</div>;
-  }
+const getStatusClass = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    'draft': 'draft',
+    'approval': 'approval',
+    'signature': 'signature',
+    'hold': 'hold',
+    'final': 'final',
+    'identification': 'identification'
+  };
+  return statusMap[status.toLowerCase()] || '';
+};
 
-  if (error) {
-    return <div className={styles.error}>Error: {error}</div>;
-  }
+const filterButtons = [
+  'All Documents'
+];
 
-  if (documents.length === 0) {
-    return <div className={styles.emptyState}>No documents found for this client</div>;
-  }
+const filteredDocuments = documents.filter(doc => {
+  const matchesSearch = searchQuery === '' || 
+    doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doc.activity.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doc.entity.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    doc.modifiedBy.toLowerCase().includes(searchQuery.toLowerCase());
+  
+  const matchesFilter = activeFilter === 'All Documents';
+  
+  return matchesSearch && matchesFilter;
+});
 
-  return (
-    <div className={styles.container}>
-      {documents.map((doc) => (
-        <div className={styles.documentRow} key={`${doc.library}-${doc.name}`}>
-          <div className={styles.documentName}>
-            <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer">
-              {doc.name}
-            </a>
-          </div>
-          <div className={styles.documentMeta}>{doc.category}</div>
-          <div className={styles.documentMeta}>{doc.updatedOn}</div>
-        </div>
+const clearSearch = () => {
+  setSearchQuery('');
+};
+
+if (loading) {
+  return <div className={styles.loading}>Loading documents…</div>;
+}
+
+if (error) {
+  return <div className={styles.error}>Error: {error}</div>;
+}
+
+if (documents.length === 0) {
+  return <div className={styles.emptyState}>No documents found for this client</div>;
+}
+
+return (
+  <div className={styles.container}>
+    {/* Search Bar */}
+    <div className={styles.searchSection}>
+      <div className={styles.searchBar}>
+        <input
+          type="text"
+          placeholder="Search Documents"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className={styles.searchInput}
+        />
+        {searchQuery && (
+          <button onClick={clearSearch} className={styles.clearButton}>
+            Clear Search
+          </button>
+        )}
+      </div>
+    </div>
+
+    {/* Filter Buttons */}
+    <div className={styles.filterSection}>
+      {filterButtons.map((filter) => (
+        <button
+          key={filter}
+          className={`${styles.filterButton} ${
+            activeFilter === filter ? styles.activeFilter : ''
+          }`}
+          onClick={() => setActiveFilter(filter)}
+        >
+          {filter}
+        </button>
       ))}
     </div>
+
+    {/* Documents Table */}
+    <div className={styles.tableContainer}>
+      <table className={styles.documentsTable}>
+        <thead>
+          <tr>
+            <th>Document Name</th>
+            <th>Activity</th>
+            <th>Entity</th>
+            <th>Status</th>
+            <th>Modified Date</th>
+            <th>Modified By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredDocuments.map((doc, index) => (
+            <tr key={`${doc.absoluteUrl}-${index}`}>
+              <td>
+                <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer" className={styles.documentLink}>
+                  {doc.name}
+                </a>
+              </td>
+              <td>{doc.activity}</td>
+              <td>{doc.entity}</td>
+              <td>
+                {doc.status || '-'}
+              </td>
+              <td>{doc.modifiedDate}</td>
+              <td>{doc.modifiedBy}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
   );
 };
 

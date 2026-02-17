@@ -12,6 +12,8 @@ export default class GreenVilleClient extends React.Component<
   IGreenVilleClientProps,
   IGreenVilleClientState
 > {
+  private observer: MutationObserver | null = null;
+
   public constructor(props: IGreenVilleClientProps) {
     super(props);
     this.state = {
@@ -21,6 +23,28 @@ export default class GreenVilleClient extends React.Component<
 
   private handleSelectClient = (id: number): void => {
     this.setState({ selectedClientId: id });
+  };
+
+  public componentDidMount(): void {
+    // Hide SharePoint chrome controls
+    this.hideArrows();
+    
+    // Hide on DOM changes
+    this.observer = new MutationObserver(() => this.hideArrows());
+    this.observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  public componentWillUnmount(): void {
+    if (this.observer) {
+      this.observer.disconnect();
+    }
+  }
+
+  private hideArrows = (): void => {
+    const arrows = document.querySelectorAll('button[title*="scroll"], .ms-ScrollablePane--scrollbar, [aria-label*="scroll"], button[style*="position: absolute"]');
+    arrows.forEach(arrow => {
+      (arrow as HTMLElement).style.display = 'none';
+    });
   };
 
   public render(): React.ReactElement<IGreenVilleClientProps> {
