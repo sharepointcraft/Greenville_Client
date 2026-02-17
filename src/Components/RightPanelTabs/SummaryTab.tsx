@@ -24,8 +24,8 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
   const loadSummary = async () => {
     const resp = await fetch(
       `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?` +
-        `$select=*,Children/Title,Siblings/Title,Parents/Title,Spouse0/Title&` +
-        `$expand=Children,Siblings,Parents,Spouse0`,
+        `$select=*,Children/Title,Siblings/Title,Parents/Title,Spouse0/Title,Author/Title,Editor/Title&` +
+        `$expand=Children,Siblings,Parents,Spouse0,Author,Editor`,
       { headers: { Accept: 'application/json;odata=nometadata' } }
     );
 
@@ -111,7 +111,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
   /* ---------------- HELPERS ---------------- */
 
   const renderLookup = (values?: any[]) =>
-    values?.map(v => v.Title).join(', ') || '—';
+    values && Array.isArray(values) ? values.map(v => v.Title).join(', ') : '—';
 
   const renderMultiline = (value?: string) =>
     value
@@ -123,6 +123,9 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
         ))
       : '—';
 
+  const renderDate = (value?: string) =>
+    value ? new Date(value).toLocaleDateString() : '—';
+
   if (!item) return <div className={styles.loading}>Loading…</div>;
 
   /* ---------------- RENDER ---------------- */
@@ -133,8 +136,16 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
         <div className={styles.detailLabel}>Client Name</div>
         <div className={styles.detailValue}>{renderClientTaxonomy(item.Client)}</div>
 
-        <div className={styles.detailLabel}>Aliases</div>
-        <div className={styles.detailValue}>{item.EntityAliases || '—'}</div>
+        <div className={styles.detailLabel}>Federal Tax ID</div>
+        <div className={styles.detailValue}>{item.FederalTaxID || '—'}</div>
+      </div>
+
+      <div className={styles.detailRow}>
+        <div className={styles.detailLabel}>Birthday</div>
+        <div className={styles.detailValue}>{renderDate(item.Birthday)}</div>
+
+        <div className={styles.detailLabel}>Anniversary</div>
+        <div className={styles.detailValue}>{renderDate(item.Anniversary)}</div>
       </div>
 
       <div className={styles.detailRow}>
@@ -143,28 +154,49 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
           {renderMultiline(item.WorkAddress)}
         </div>
 
+        <div className={styles.detailLabel}>Aliases</div>
+        <div className={styles.detailValue}>{item.EntityAliases || '—'}</div>
+      </div>
+
+      <div className={styles.detailRow}>
         <div className={styles.detailLabel}>Marital Status</div>
         <div className={styles.detailValue}>{item.MaritalStatus || '—'}</div>
-      </div>
 
-      <div className={styles.detailRow}>
         <div className={styles.detailLabel}>Children</div>
         <div className={styles.detailValue}>{renderLookup(item.Children)}</div>
-
-        <div className={styles.detailLabel}>Siblings</div>
-        <div className={styles.detailValue}>{renderLookup(item.Siblings)}</div>
       </div>
 
       <div className={styles.detailRow}>
+        <div className={styles.detailLabel}>Siblings</div>
+        <div className={styles.detailValue}>{renderLookup(item.Siblings)}</div>
+
+        <div className={styles.detailLabel}>Parents</div>
+        <div className={styles.detailValue}>{renderLookup(item.Parents)}</div>
+      </div>
+
+      <div className={styles.detailRow}>
+        <div className={styles.detailLabel}>Spouse</div>
+        <div className={styles.detailValue}>{renderLookup(item.Spouse0)}</div>
+
         <div className={styles.detailLabel}>Related Client</div>
         <div className={styles.detailValue}>
           {renderClientTaxonomy(item.RelatedClient)}
         </div>
+      </div>
 
+      <div className={styles.detailRow}>
         <div className={styles.detailLabel}>Related Entity</div>
         <div className={styles.detailValue}>
           {renderEntityTaxonomy(item.RelatedEntity)}
         </div>
+
+        <div className={styles.detailLabel}>Created</div>
+        <div className={styles.detailValue}>{renderDate(item.Created)}</div>
+      </div>
+
+      <div className={styles.detailRow}>
+        <div className={styles.detailLabel}>Modified By</div>
+        <div className={styles.detailValue}>{item.Editor?.Title || '—'}</div>
       </div>
     </div>
   );
