@@ -27,61 +27,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
   const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = React.useState('');
   const [activeFilter, setActiveFilter] = React.useState('All Documents');
- 
-  React.useEffect(() => {
-    loadDocuments();
-  }, [clientId]);
- 
-  const loadDocuments = async () => {
-    try {
-      setLoading(true);
-      setError(null);
- 
-      console.log('Loading documents for clientId:', clientId);
- 
-      // Step 1: Get the client item with RelatedClient field
-      const clientResponse = await fetch(
-        `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`,
-        { headers: { Accept: 'application/json;odata=nometadata' } }
-      );
- 
-      if (!clientResponse.ok) {
-        throw new Error(`Failed to fetch client data: ${clientResponse.status} ${clientResponse.statusText}`);
-      }
- 
-      const clientData = await clientResponse.json();
-      console.log('Client data:', clientData);
-     
-      // Extract RelatedClient term GUIDs
-      const relatedClientGuids = new Set<string>();
-      collectTermGuids(clientData.RelatedClient, relatedClientGuids);
- 
-      console.log('RelatedClient GUIDs:', Array.from(relatedClientGuids));
- 
-      if (relatedClientGuids.size === 0) {
-        console.log('No RelatedClient GUIDs found for this client');
-        setDocuments([]);
-        setLoading(false);
-        return;
-      }
- 
-      // Step 2: Load client terms to get the actual names
-      await loadClientTerms(relatedClientGuids);
-      console.log('Client terms loaded:', clientTerms);
- 
-      // Step 3: Search for documents across all libraries in Prod-docCenter
-      const foundDocuments = await searchDocumentsByRelatedClient(relatedClientGuids);
-      console.log('Found documents:', foundDocuments);
-      setDocuments(foundDocuments);
- 
-    } catch (err) {
-      console.error('Error in loadDocuments:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load documents');
-    } finally {
-      setLoading(false);
-    }
-  };
- 
+  const [activeSubTab, setActiveSubTab] = React.useState('All Documents');
+
   const collectTermGuids = (value: any, set: Set<string>) => {
     if (!value) return;
  
@@ -287,6 +234,60 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     console.log('Final documents found:', allDocuments);
     return allDocuments;
   };
+
+  const loadDocuments = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('Loading documents for clientId:', clientId);
+
+      // Step 1: Get the client item with RelatedClient field
+      const clientResponse = await fetch(
+        `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`,
+        { headers: { Accept: 'application/json;odata=nometadata' } }
+      );
+
+      if (!clientResponse.ok) {
+        throw new Error(`Failed to fetch client data: ${clientResponse.status} ${clientResponse.statusText}`);
+      }
+
+      const clientData = await clientResponse.json();
+      console.log('Client data:', clientData);
+      
+      // Extract RelatedClient term GUIDs
+      const relatedClientGuids = new Set<string>();
+      collectTermGuids(clientData.RelatedClient, relatedClientGuids);
+
+      console.log('RelatedClient GUIDs:', Array.from(relatedClientGuids));
+
+      if (relatedClientGuids.size === 0) {
+        console.log('No RelatedClient GUIDs found for this client');
+        setDocuments([]);
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Load client terms to get the actual names
+      await loadClientTerms(relatedClientGuids);
+      console.log('Client terms loaded:', clientTerms);
+
+      // Step 3: Search for documents across all libraries in Prod-docCenter
+      const foundDocuments = await searchDocumentsByRelatedClient(relatedClientGuids);
+      console.log('Found documents:', foundDocuments);
+      setDocuments(foundDocuments);
+
+    } catch (err) {
+      console.error('Error in loadDocuments:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    void loadDocuments();
+  }, [clientId]);
  
 const getStatusClass = (status: string): string => {
   const statusMap: Record<string, string> = {
@@ -299,27 +300,31 @@ const getStatusClass = (status: string): string => {
   };
   return statusMap[status.toLowerCase()] || '';
 };
- 
-const filterButtons = [
-  'All Documents'
-];
- 
+
+const subTabs = ['All Documents', 'Draft', 'Approval', 'Signature', 'Hold', 'Final', 'Identification'];
+
 const filteredDocuments = documents.filter(doc => {
   const matchesSearch = searchQuery === '' ||
     doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.activity.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.entity.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.modifiedBy.toLowerCase().includes(searchQuery.toLowerCase());
- 
-  const matchesFilter = activeFilter === 'All Documents';
- 
-  return matchesSearch && matchesFilter;
+
+  const matchesSubTab = activeSubTab === 'All Documents' || 
+    (activeSubTab === 'Draft' && doc.status.toLowerCase() === 'draft') ||
+    (activeSubTab === 'Approval' && doc.status.toLowerCase() === 'approval') ||
+    (activeSubTab === 'Signature' && doc.status.toLowerCase() === 'signature') ||
+    (activeSubTab === 'Hold' && doc.status.toLowerCase() === 'hold') ||
+    (activeSubTab === 'Final' && doc.status.toLowerCase() === 'final') ||
+    (activeSubTab === 'Identification' && doc.status.toLowerCase() === 'identification');
+
+  return matchesSearch && matchesSubTab;
 });
- 
+
 const clearSearch = () => {
   setSearchQuery('');
 };
- 
+
 if (loading) {
   return <div className={styles.loading}>Loading documents…</div>;
 }
@@ -339,66 +344,63 @@ return (
       <div className={styles.searchBar}>
         <input
           type="text"
-          placeholder="Search Documents"
+          placeholder="Search for documents"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className={styles.searchInput}
         />
-        {searchQuery && (
-          <button onClick={clearSearch} className={styles.clearButton}>
+                  <button onClick={clearSearch} className={styles.clearButton}>
             Clear Search
           </button>
-        )}
+        </div>
       </div>
-    </div>
  
     {/* Filter Buttons */}
     <div className={styles.filterSection}>
-      {filterButtons.map((filter) => (
+      {subTabs.map((tab) => (
         <button
-          key={filter}
+          key={tab}
           className={`${styles.filterButton} ${
-            activeFilter === filter ? styles.activeFilter : ''
+            activeSubTab === tab ? styles.activeFilter : ''
           }`}
-          onClick={() => setActiveFilter(filter)}
+          onClick={() => setActiveSubTab(tab)}
         >
-          {filter}
+          {tab}
         </button>
       ))}
     </div>
  
     {/* Documents Table */}
-    <div className={styles.tableContainer}>
-      <table className={styles.documentsTable}>
-        <thead>
-          <tr>
-            <th>Document Name</th>
-            <th>Activity</th>
-            <th>Entity</th>
-            <th>Status</th>
-            <th>Modified Date</th>
-            <th>Modified By</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredDocuments.map((doc, index) => (
-            <tr key={`${doc.absoluteUrl}-${index}`}>
-              <td>
-                <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer" className={styles.documentLink}>
-                  {doc.name}
-                </a>
-              </td>
-              <td>{doc.activity}</td>
-              <td>{doc.entity}</td>
-              <td>
-                {doc.status || '-'}
-              </td>
-              <td>{doc.modifiedDate}</td>
-              <td>{doc.modifiedBy}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className={styles.table}>
+      <div className={styles.headerRow}>
+        <div>Document Name</div>
+        <div>Activity</div>
+        <div>Entity</div>
+        <div>Status</div>
+        <div>Modified Date</div>
+        <div>Modified By</div>
+      </div>
+
+      <div className={styles.bodyRows}>
+        {!filteredDocuments.length && (
+          <div className={styles.noData}>No documents found</div>
+        )}
+
+        {filteredDocuments.map((doc, index) => (
+          <div key={`${doc.absoluteUrl}-${index}`} className={styles.dataRow}>
+            <div className={styles.link}>
+              <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer">
+                {doc.name}
+              </a>
+            </div>
+            <div>{doc.activity}</div>
+            <div>{doc.entity}</div>
+            <div>{doc.status || '-'}</div>
+            <div>{doc.modifiedDate}</div>
+            <div>{doc.modifiedBy}</div>
+          </div>
+        ))}
+      </div>
     </div>
   </div>
   );

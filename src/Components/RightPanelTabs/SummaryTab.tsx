@@ -10,73 +10,15 @@ interface SummaryTabProps {
   clientId: number;
 }
 
+const chunk = <T,>(arr: T[], size: number): T[][] =>
+  Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
+    arr.slice(i * size, i * size + size)
+  );
+
 const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
   const [item, setItem] = React.useState<any>(null);
-  const [clientTerms, setClientTerms] = React.useState<Record<string, string>>(
-    {}
-  );
-  const [entityTerms, setEntityTerms] = React.useState<Record<string, string>>(
-    {}
-  );
-
-  React.useEffect(() => {
-    loadSummary();
-  }, [clientId]);
-
-  /* ================= LOAD CLIENT ================= */
-
-  const loadSummary = async () => {
-    const resp = await fetch(
-      `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?` +
-        `$select=*,Children/Id,Children/Title,Siblings/Id,Siblings/Title,Parents/Id,Parents/Title&` +
-        `$expand=Children,Siblings,Parents`,
-      { headers: { Accept: 'application/json;odata=nometadata' } }
-    );
-
-    const data = await resp.json();
-    setItem(data);
-
-    const clientGuids = new Set<string>();
-    const entityGuids = new Set<string>();
-
-    collectTermGuids(data.Client, clientGuids);
-    collectTermGuids(data.RelatedClient, clientGuids);
-    collectTermGuids(data.RelatedEntity, entityGuids);
-
-    if (clientGuids.size) {
-      await loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms);
-    }
-    if (entityGuids.size) {
-      await loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms);
-    }
-  };
-
-  /* ================= TERM STORE ================= */
-
-  const loadTermSet = async (
-    guids: Set<string>,
-    setId: string,
-    setState: React.Dispatch<React.SetStateAction<Record<string, string>>>
-  ) => {
-    const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${setId}')/terms`,
-      { headers: { Accept: 'application/json' } }
-    );
-
-    const data = await resp.json();
-    const map: Record<string, string> = {};
-
-    (data.value || []).forEach((t: any) => {
-      if (guids.has(t.id)) {
-        const label =
-          t.labels?.find((l: any) => l.isDefault)?.name ||
-          t.labels?.[0]?.name;
-        if (label) map[t.id] = label;
-      }
-    });
-
-    setState(map);
-  };
+  const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
+  const [entityTerms, setEntityTerms] = React.useState<Record<string, string>>({});
 
   /* ================= TAXONOMY HELPERS ================= */
 
@@ -87,44 +29,40 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
       val
         .split(';#')
         .filter(v => v.includes('|'))
-        .forEach(v => set.add(v.split('|')[1]));
-    } else if (Array.isArray(val)) {
+        .forEach(v => {
+          const parts = v.split('|');
+          if (parts[1]) set.add(parts[1]);
+        });
+      return;
+    }
+
+    if (Array.isArray(val)) {
       val.forEach(v => collectTermGuids(v, set));
-    } else if (val.TermGuid) {
+      return;
+    }
+
+    if (val.TermGuid) {
       set.add(val.TermGuid);
     }
   };
 
-  const renderClientTaxonomy = (val: any) =>
-    renderTaxonomy(val, clientTerms);
-
-  const renderEntityTaxonomy = (val: any) =>
-    renderTaxonomy(val, entityTerms);
-
-  const getClientTaxonomyLabels = (val: any) =>
-    getTaxonomyLabels(val, clientTerms);
-
-  const getEntityTaxonomyLabels = (val: any) =>
-    getTaxonomyLabels(val, entityTerms);
-
-  const renderTaxonomy = (
-    val: any,
-    map: Record<string, string>
-  ): string => {
-    return getTaxonomyLabels(val, map).join(', ');
-  };
-
-  const getTaxonomyLabels = (
-    val: any,
-    map: Record<string, string>
-  ): string[] => {
+  const getTaxonomyLabels = (val: any, map: Record<string, string>): string[] => {
     const guids = new Set<string>();
     collectTermGuids(val, guids);
     if (!guids.size) return [];
+
     return Array.from(guids)
       .map(g => map[g] || g)
       .filter(Boolean);
   };
+
+  const renderTaxonomy = (val: any, map: Record<string, string>): string =>
+    getTaxonomyLabels(val, map).join(', ');
+
+  const renderClientTaxonomy = (val: any) => renderTaxonomy(val, clientTerms);
+  const renderEntityTaxonomy = (val: any) => renderTaxonomy(val, entityTerms);
+  const getClientTaxonomyLabels = (val: any) => getTaxonomyLabels(val, clientTerms);
+  const getEntityTaxonomyLabels = (val: any) => getTaxonomyLabels(val, entityTerms);
 
   const renderBulletList = (items: string[]) =>
     items.length ? (
@@ -146,6 +84,32 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
         </React.Fragment>
       ))
     ) : null;
+
+  const formatDate = (value?: string | number | Date) => {
+    if (!value) return value;
+
+    let date: Date | null = null;
+
+    if (value instanceof Date) {
+      date = value;
+    } else if (typeof value === 'number') {
+      date = new Date(value);
+    } else if (typeof value === 'string') {
+      const spMatch = value.match(/Date\((\d+)\)/);
+      date = spMatch ? new Date(Number(spMatch[1])) : new Date(value);
+    }
+
+    if (!date || Number.isNaN(date.getTime())) return value;
+
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'UTC',
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric'
+    });
+
+    return formatter.format(date).replace(/\//g, '-');
+  };
 
   const getListLabels = (value: any): string[] => {
     if (!value) return [];
@@ -190,8 +154,66 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     ) : null;
   };
 
-  const hasValue = (v: any) =>
-    v !== null && v !== undefined && v !== '';
+  const hasValue = (v: any) => v !== null && v !== undefined && v !== '';
+
+  /* ================= TERM STORE ================= */
+
+  const loadTermSet = async (
+    guids: Set<string>,
+    setId: string,
+    setState: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  ) => {
+    const resp = await fetch(
+      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${setId}')/terms`,
+      { headers: { Accept: 'application/json' } }
+    );
+
+    const data = await resp.json();
+    const map: Record<string, string> = {};
+
+    (data.value || []).forEach((t: any) => {
+      if (guids.has(t.id)) {
+        const label =
+          t.labels?.find((l: any) => l.isDefault)?.name ||
+          t.labels?.[0]?.name;
+        if (label) map[t.id] = label;
+      }
+    });
+
+    setState(map);
+  };
+
+  /* ================= LOAD CLIENT ================= */
+
+  const loadSummary = async () => {
+    const resp = await fetch(
+      `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?` +
+        `$select=*,Children/Id,Children/Title,Siblings/Id,Siblings/Title,Parents/Id,Parents/Title&` +
+        `$expand=Children,Siblings,Parents`,
+      { headers: { Accept: 'application/json;odata=nometadata' } }
+    );
+
+    const data = await resp.json();
+    setItem(data);
+
+    const clientGuids = new Set<string>();
+    const entityGuids = new Set<string>();
+
+    collectTermGuids(data.Client, clientGuids);
+    collectTermGuids(data.RelatedClient, clientGuids);
+    collectTermGuids(data.RelatedEntity, entityGuids);
+
+    if (clientGuids.size) {
+      await loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms);
+    }
+    if (entityGuids.size) {
+      await loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms);
+    }
+  };
+
+  React.useEffect(() => {
+    void loadSummary();
+  }, [clientId]);
 
   if (!item) {
     return <div className={styles.loading}>Loading summary…</div>;
@@ -205,7 +227,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     { label: 'Address', value: renderMultiline(item.WorkAddress) },
     { label: 'Marital Status', value: item.MaritalStatus },
     { label: 'Generation', value: item.Generation },
-    { label: 'Birthday', value: item.Birthday },
+    { label: 'Birthday', value: formatDate(item.Birthday) },
     { label: 'Federal Tax ID', value: item.FederalTaxID },
     { label: 'Drivers License', value: item.DriversLicense },
     { label: 'P.O. Box', value: item.POBox },
@@ -219,97 +241,88 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     getListLabels(item.Children).length > 0 ||
     hasValue(item.MinorChild);
 
-  const relationshipSection =
-    item.RelatedClient || item.RelatedEntity;
+  const relationshipSection = item.RelatedClient || item.RelatedEntity;
 
   /* ================= RENDER ================= */
 
-return (
-  <div className={styles.summaryRoot}>
-    {/* SECTION 1: CORE DETAILS */}
-    <div className={styles.section}>
-      {chunk(coreFields, 3).map((row, i) => (
-        <div className={styles.rowWrapper}>
-          <div className={styles.row} key={i}>
-            {row.map(f => (
-              <div className={styles.cell} key={f.label}>
-                <span className={styles.label}>{f.label}</span>
-                <div className={styles.value}>{f.value}</div>
+  return (
+    <div className={styles.summaryRoot}>
+      {/* SECTION 1: CORE DETAILS */}
+      <div className={styles.section}>
+        {chunk(coreFields, 3).map((row, i) => (
+          <div className={styles.rowWrapper} key={i}>
+            <div className={styles.row}>
+              {row.map(f => (
+                <div className={styles.cell} key={f.label}>
+                  <span className={styles.label}>{f.label}</span>
+                  <div className={styles.value}>{f.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* SECTION 2: FAMILY */}
+      {familySection && (
+        <>
+          <div className={styles.separator} />
+          <div className={styles.section}>
+            <div className={styles.rowWrapper}>
+              <div className={styles.row}>
+                {getListLabels(item.Parents).length > 0 && (
+                  <div className={styles.cell}>
+                    <span className={styles.label}>Parents</span>
+                    {renderList(item.Parents)}
+                  </div>
+                )}
+
+                {getListLabels(item.Siblings).length > 0 && (
+                  <div className={styles.cell}>
+                    <span className={styles.label}>Siblings</span>
+                    {renderList(item.Siblings)}
+                  </div>
+                )}
+
+                {getListLabels(item.Children).length > 0 && (
+                  <div className={styles.cell}>
+                    <span className={styles.label}>Children</span>
+                    {renderList(item.Children)}
+                  </div>
+                )}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-      ))}
+        </>
+      )}
+
+      {/* SECTION 3: RELATIONSHIPS */}
+      {relationshipSection && (
+        <>
+          <div className={styles.separator} />
+          <div className={styles.section}>
+            <div className={styles.rowWrapper}>
+              <div className={styles.row}>
+                {item.RelatedClient && (
+                  <div className={styles.cell}>
+                    <span className={styles.label}>Related Clients</span>
+                    {renderBulletList(getClientTaxonomyLabels(item.RelatedClient))}
+                  </div>
+                )}
+
+                {item.RelatedEntity && (
+                  <div className={styles.cell}>
+                    <span className={styles.label}>Related Entities</span>
+                    {renderBulletList(getEntityTaxonomyLabels(item.RelatedEntity))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
-
-    {/* SECTION 2: FAMILY */}
-    {familySection && (
-      <>
-        <div className={styles.separator} />
-        <div className={styles.section}>
-          <div className={styles.rowWrapper}>
-            <div className={styles.row}>
-              {getListLabels(item.Parents).length > 0 && (
-                <div className={styles.cell}>
-                  <span className={styles.label}>Parents</span>
-                  {renderList(item.Parents)}
-                </div>
-              )}
-
-              {getListLabels(item.Siblings).length > 0 && (
-                <div className={styles.cell}>
-                  <span className={styles.label}>Siblings</span>
-                  {renderList(item.Siblings)}
-                </div>
-              )}
-
-              {getListLabels(item.Children).length > 0 && (
-                <div className={styles.cell}>
-                  <span className={styles.label}>Children</span>
-                  {renderList(item.Children)}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </>
-    )}
-
-    {/* SECTION 3: RELATIONSHIPS */}
-    {relationshipSection && (
-      <>
-        <div className={styles.separator} />
-        <div className={styles.section}>
-          <div className={styles.rowWrapper}>
-            <div className={styles.row}>
-              {item.RelatedClient && (
-                <div className={styles.cell}>
-                  <span className={styles.label}>Related Clients</span>
-                  {renderBulletList(getClientTaxonomyLabels(item.RelatedClient))}
-                </div>
-              )}
-
-              {item.RelatedEntity && (
-                <div className={styles.cell}>
-                  <span className={styles.label}>Related Entities</span>
-                  {renderBulletList(getEntityTaxonomyLabels(item.RelatedEntity))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </>
-    )}
-  </div>
-);
-
-};
-
-/* ================= UTIL ================= */
-
-const chunk = <T,>(arr: T[], size: number): T[][] =>
-  Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
-    arr.slice(i * size, i * size + size)
   );
+};
 
 export default SummaryTab;

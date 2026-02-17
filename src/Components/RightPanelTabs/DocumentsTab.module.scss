@@ -2,8 +2,10 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 8px;
+  gap: 8px;
+  // padding: 8px;
+
+  scrollbar-width: thin;
  
   /* Hide scrollbar arrows */
   &::-webkit-scrollbar-button {
@@ -14,8 +16,6 @@
   &::-webkit-scrollbar-corner {
     display: none;
   }
- 
-  scrollbar-width: thin;
  
   /* Hide any elements that might be arrow buttons */
   button[title*="scroll"],
@@ -28,21 +28,23 @@
 }
  
 .searchSection {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
  
 .searchBar {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 8px;
+  max-width: 470px;
 }
  
 .searchInput {
-  flex: 1;
-  padding: 4px 8px;
-  border: 1px solid #d1d1d1;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #d8d8d8;
   border-radius: 2px;
-  font-size: 13px;
+  width: 190px;
+  font-size: 12px;
  
   &:focus {
     outline: none;
@@ -52,46 +54,49 @@
 }
  
 .clearButton {
-  padding: 4px 12px;
-  background: #f3f2f1;
-  border: 1px solid #d1d1d1;
+  height: 30px;
+  padding: 0 12px;
+  background: #f6f6f6;
+  border: 1px solid #dddddd;
   border-radius: 2px;
-  font-size: 13px;
   cursor: pointer;
+  font-size: 12px;
+  color: #5f5f5f;
  
   &:hover {
-    background: #e1dfdd;
+    background: #edebe9;
   }
 }
  
 .filterSection {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
+  gap: 16px;
+  margin-bottom: 6px;
+  // max-width: 470px;
 }
  
 .filterButton {
-  padding: 3px 8px;
-  background: #f3f2f1;
-  border: 1px solid #d1d1d1;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 2px;
-  font-size: 12px;
   cursor: pointer;
-  white-space: nowrap;
+  font-size: 12px;
+  color: #605e5c;
  
   &:hover {
-    background: #e1dfdd;
+    color: #323130;
   }
 }
  
 .activeFilter {
-  background: #0078d4;
-  color: white;
-  border-color: #0078d4;
+  color: #ffffff;
+  background: #2f8a33;
+  border-color: #2f8a33;
+  font-weight: 600;
  
   &:hover {
-    background: #106ebe;
+    color: #ffffff;
   }
 }
  
@@ -99,14 +104,12 @@
   overflow-x: auto;
   border: 1px solid #d1d1d1;
   border-radius: 2px;
+  scrollbar-width: none;
  
   /* Hide scrollbar arrows in webkit browsers */
   &::-webkit-scrollbar-button {
     display: none;
   }
- 
-  /* Hide scrollbar arrows in Firefox */
-  scrollbar-width: thin;
 }
  
 .documentsTable {
@@ -149,6 +152,75 @@
   }
 }
  
+.table {
+  border-top: 1px solid #dcdcdc;
+  width: 100%;
+}
+
+.headerRow {
+  display: grid !important;
+  grid-template-columns: 2.5fr 2fr 2fr 1.2fr 1.2fr 1.2fr !important;
+  padding: 7px 8px;
+  font-weight: 600;
+  font-size: 12px;
+  color: #2f2f2f;
+  background: #f7f7f7;
+  border-bottom: 1px solid #dcdcdc;
+}
+
+.bodyRows {
+  border-bottom: 1px solid #e3e3e3;
+}
+
+.dataRow {
+  display: grid !important;
+  grid-template-columns: 2.5fr 2fr 2fr 1.2fr 1.2fr 1.2fr !important;
+  padding: 0px 8px;
+  border-bottom: 1px solid #ececec;
+  align-items: center;
+  min-height: 22px;
+  font-size: 12px;
+}
+
+.dataRow:nth-child(odd) {
+  background: #f8f8f8;
+}
+
+.dataRow:nth-child(even) {
+  background: #f2f2f2;
+}
+
+.dataRow:hover {
+  background: #ececec;
+}
+
+.link {
+  color: #1f6f2e;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 8px;
+  font-size: 12px;
+
+  a {
+    color: #1f6f2e;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.noData {
+  padding: 10px 8px;
+  color: #5f5f5f;
+  font-style: italic;
+  background: #f8f8f8;
+  font-size: 12px;
+}
+
 .loading {
   padding: 16px;
   text-align: center;
