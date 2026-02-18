@@ -39,7 +39,7 @@ case 'Documents':
         return clientTermGuid ? <TasksTab webUrl={webUrl} clientId={clientId!} clientTermGuid={clientTermGuid}/> : null;
 
       case 'Entities':
-        return <EntitiesTab />;
+        return clientTermGuid ?  <EntitiesTab webUrl={webUrl}clientTermGuid={clientTermGuid}/> : null;
 
       default:
         return null;
