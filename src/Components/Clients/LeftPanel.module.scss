@@ -88,6 +88,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.placeholder {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #777;
+}
 .popupOverlay {
   position: fixed;
   inset: 0;
@@ -99,7 +105,7 @@
 }
 
 .popupCard {
-  width: min(1280px, 92vw);
+  width: min(700px, 92vw);
   height: min(860px, 90vh);
   background: #fff;
   border-radius: 8px;

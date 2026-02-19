@@ -213,6 +213,36 @@ const EntityView: React.FC<EntityViewProps> = ({
     void loadEntities();
   };
 
+  // NEW: Fast-close logic for the Entity iframe
+  const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
+    try {
+      const iframe = e.target as HTMLIFrameElement;
+      const iframeWindow = iframe.contentWindow;
+      const iframeUrl = iframeWindow?.location.href;
+      
+      if (iframeUrl) {
+        const urlObj = new URL(iframeUrl);
+        
+        // 1. FALLBACK: Close if it manages to load AllItems.aspx
+        if (urlObj.pathname.toLowerCase().endsWith('allitems.aspx')) {
+          closeAddEntityForm();
+          return;
+        }
+
+        // 2. FAST CLOSE: Catch the unload event the moment Save/Cancel is clicked
+        if (iframeWindow) {
+          iframeWindow.addEventListener('unload', () => {
+            setTimeout(() => {
+              closeAddEntityForm();
+            }, 100);
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("Iframe load check:", error);
+    }
+  };
+
   const renderTabContent = () => {
     if (!selectedEntity) {
       return (
@@ -327,6 +357,7 @@ const EntityView: React.FC<EntityViewProps> = ({
                 title="Add New Entity"
                 src={newFormUrl}
                 className={leftPanelStyles.popupFrame}
+                onLoad={handleIframeLoad} // NEW: Added onLoad listener here
               />
             ) : (
               <div className={styles.infoState}>Form URL not available.</div>

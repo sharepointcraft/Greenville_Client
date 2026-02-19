@@ -239,6 +239,36 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
     void loadTasks();
   };
 
+  // NEW: Fast-close logic for the Task iframe
+  const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
+    try {
+      const iframe = e.target as HTMLIFrameElement;
+      const iframeWindow = iframe.contentWindow;
+      const iframeUrl = iframeWindow?.location.href;
+      
+      if (iframeUrl) {
+        const urlObj = new URL(iframeUrl);
+        
+        // 1. FALLBACK: Close if it manages to load AllItems.aspx
+        if (urlObj.pathname.toLowerCase().endsWith('allitems.aspx')) {
+          closeAddTask();
+          return;
+        }
+
+        // 2. FAST CLOSE: Catch the unload event the moment Save/Cancel is clicked
+        if (iframeWindow) {
+          iframeWindow.addEventListener('unload', () => {
+            setTimeout(() => {
+              closeAddTask();
+            }, 100);
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("Iframe load check:", error);
+    }
+  };
+
   const filteredTasks = React.useMemo(() => {
     const search = searchText.trim().toLowerCase();
 
@@ -471,7 +501,12 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
                 ×
               </button>
             </div>
-            <iframe title="Add New Task" src={ENTITY_TASK_NEW_FORM_URL} className={styles.popupFrame} />
+            <iframe 
+              title="Add New Task" 
+              src={ENTITY_TASK_NEW_FORM_URL} 
+              className={styles.popupFrame}
+              onLoad={handleIframeLoad} // NEW: Added onLoad listener here
+            />
           </div>
         </div>
       )}

@@ -33,7 +33,7 @@ const TasksTab: React.FC<TasksTabProps> = ({
 
   /* ---------------- HELPERS ---------------- */
 
-const parseTaxonomyLabel = (value?: any): string => {
+  const parseTaxonomyLabel = (value?: any): string => {
     if (!value) return '—';
 
     if (typeof value === 'string') {
@@ -256,103 +256,98 @@ const parseTaxonomyLabel = (value?: any): string => {
 
   /* ---------------- MAIN LOAD ---------------- */
 
-const loadTasks = async () => {
-  try {
-    setLoading(true);
-    setError(null);
+  const loadTasks = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-    const fetchJson = async (url: string) => {
-      const resp = await fetch(url, {
-        headers: { Accept: 'application/json;odata=nometadata' }
-      });
+      const fetchJson = async (url: string) => {
+        const resp = await fetch(url, {
+          headers: { Accept: 'application/json;odata=nometadata' }
+        });
 
-      if (!resp.ok) {
-        const detail = await resp.text();
-        throw new Error(`HTTP ${resp.status}: ${detail || 'Request failed'}`);
-      }
+        if (!resp.ok) {
+          const detail = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${detail || 'Request failed'}`);
+        }
 
-      return resp.json();
-    };
+        return resp.json();
+      };
 
-    /* 1️⃣ Load RelatedClient from Clients list */
-    const clientData = await fetchJson(
-      `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`
-    );
+      const clientData = await fetchJson(
+        `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`
+      );
 
-    /* 2️⃣ Extract taxonomy term GUIDs safely */
-    const extractTermGuids = (val: any): string[] => {
-      const guids: string[] = [];
-      if (!val) return guids;
+      const extractTermGuids = (val: any): string[] => {
+        const guids: string[] = [];
+        if (!val) return guids;
 
-      if (typeof val === 'string') {
-        val
-          .split(';#')
-          .filter(v => v.includes('|'))
-          .forEach(v => {
-            const m = v.match(/\|([0-9a-fA-F-]{36})$/);
-            if (m?.[1]) guids.push(m[1].toLowerCase());
+        if (typeof val === 'string') {
+          val
+            .split(';#')
+            .filter(v => v.includes('|'))
+            .forEach(v => {
+              const m = v.match(/\|([0-9a-fA-F-]{36})$/);
+              if (m?.[1]) guids.push(m[1].toLowerCase());
+            });
+          return guids;
+        }
+
+        if (val.TermGuid) return [String(val.TermGuid).toLowerCase()];
+
+        if (Array.isArray(val)) {
+          val.forEach(v => {
+            if (v?.TermGuid) {
+              guids.push(String(v.TermGuid).toLowerCase());
+            }
           });
+          return guids;
+        }
+
         return guids;
+      };
+
+      const relatedClientGuids = extractTermGuids(clientData.RelatedClient);
+
+      const clientGuidsToMatch = new Set<string>([
+        clientTermGuid.toLowerCase(),
+        ...relatedClientGuids
+      ]);
+
+      if (!clientGuidsToMatch.size) {
+        setTasks([]);
+        return;
       }
 
-      if (val.TermGuid) return [String(val.TermGuid).toLowerCase()];
+      const taskData = await fetchJson(
+        `${webUrl}/_api/web/lists/getByTitle('Tasks')/items?` +
+          `$select=Id,Title,Status,Priority,DueDate1,RelatedClient,RelatedEntity,AssignedTo1/Title,AssignedTo1/EMail&` +
+          `$expand=AssignedTo1&` +
+          `$top=5000`,
+      );
+      const allTasks = taskData.value || [];
 
-      if (Array.isArray(val)) {
-        val.forEach(v => {
-          if (v?.TermGuid) {
-            guids.push(String(v.TermGuid).toLowerCase());
+      const filtered = allTasks.filter((task: any) => {
+        const taskClientGuids = new Set(extractTermGuids(task.RelatedClient));
+        let isMatch = false;
+        taskClientGuids.forEach(guid => {
+          if (clientGuidsToMatch.has(guid)) {
+            isMatch = true;
           }
         });
-        return guids;
-      }
-
-      return guids;
-    };
-
-    const relatedClientGuids = extractTermGuids(clientData.RelatedClient);
-
-    // Match tasks when RelatedClient is linked to either the selected client term
-    // or any RelatedClient terms configured on the selected client item.
-    const clientGuidsToMatch = new Set<string>([
-      clientTermGuid.toLowerCase(),
-      ...relatedClientGuids
-    ]);
-
-    if (!clientGuidsToMatch.size) {
-      setTasks([]);
-      return;
-    }
-
-    /* 3️⃣ Load Tasks and filter in code (taxonomy filtering is inconsistent in OData) */
-    const taskData = await fetchJson(
-      `${webUrl}/_api/web/lists/getByTitle('Tasks')/items?` +
-        `$select=Id,Title,Status,Priority,DueDate1,RelatedClient,RelatedEntity,AssignedTo1/Title,AssignedTo1/EMail&` +
-        `$expand=AssignedTo1&` +
-        `$top=5000`,
-    );
-    const allTasks = taskData.value || [];
-
-    const filtered = allTasks.filter((task: any) => {
-      const taskClientGuids = new Set(extractTermGuids(task.RelatedClient));
-      let isMatch = false;
-      taskClientGuids.forEach(guid => {
-        if (clientGuidsToMatch.has(guid)) {
-          isMatch = true;
-        }
+        return isMatch;
       });
-      return isMatch;
-    });
 
-    await loadEntityTerms(fetchJson, filtered);
-    setTasks(filtered);
-  } catch (err) {
-    console.error('Tasks load error', err);
-    setError(err instanceof Error ? `Failed to load tasks: ${err.message}` : 'Failed to load tasks');
-    setTasks([]);
-  } finally {
-    setLoading(false);
-  }
-};
+      await loadEntityTerms(fetchJson, filtered);
+      setTasks(filtered);
+    } catch (err) {
+      console.error('Tasks load error', err);
+      setError(err instanceof Error ? `Failed to load tasks: ${err.message}` : 'Failed to load tasks');
+      setTasks([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   React.useEffect(() => {
     if (!clientId || !clientTermGuid) {
@@ -365,7 +360,37 @@ const loadTasks = async () => {
     void loadTasks();
   }, [clientId, clientTermGuid]);
 
+  // NEW: Fast-close logic for the Task iframe
+  const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
+    try {
+      const iframe = e.target as HTMLIFrameElement;
+      const iframeWindow = iframe.contentWindow;
+      const iframeUrl = iframeWindow?.location.href;
+      
+      if (iframeUrl) {
+        const urlObj = new URL(iframeUrl);
+        
+        // 1. FALLBACK: Close if it manages to load AllItems.aspx
+        if (urlObj.pathname.toLowerCase().endsWith('allitems.aspx')) {
+          setShowAddPopup(false);
+          void loadTasks();
+          return;
+        }
 
+        // 2. FAST CLOSE: Catch the unload event the moment Save/Cancel is clicked
+        if (iframeWindow) {
+          iframeWindow.addEventListener('unload', () => {
+            setTimeout(() => {
+              setShowAddPopup(false);
+              void loadTasks();
+            }, 100);
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("Iframe load check:", error);
+    }
+  };
 
   /* ---------------- RENDER ---------------- */
 
@@ -530,7 +555,10 @@ const loadTasks = async () => {
               <button
                 type="button"
                 className={styles.popupClose}
-                onClick={() => setShowAddPopup(false)}
+                onClick={() => {
+                  setShowAddPopup(false);
+                  void loadTasks(); // Refresh tasks manually if user closes via the 'X' button
+                }}
                 aria-label="Close"
               >
                 ×
@@ -540,6 +568,7 @@ const loadTasks = async () => {
               title="Add New Task"
               src={ADD_NEW_TASK_URL}
               className={styles.popupFrame}
+              onLoad={handleIframeLoad} // NEW: Attached the event listener here
             />
           </div>
         </div>

@@ -5,6 +5,7 @@ import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
 const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
 const CLIENT_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
 const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
+const BANK_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda'; // NEW: Added Bank Term Set ID
 
 interface EntitySummaryTabProps {
   webUrl: string;
@@ -20,6 +21,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
   const [item, setItem] = React.useState<any>(null);
   const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
   const [entityTerms, setEntityTerms] = React.useState<Record<string, string>>({});
+  const [bankTerms, setBankTerms] = React.useState<Record<string, string>>({}); // NEW: State for Bank terms
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -142,6 +144,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
       setItem(null);
       setClientTerms({});
       setEntityTerms({});
+      setBankTerms({});
       setLoading(false);
       return;
     }
@@ -158,20 +161,26 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
         return resp.json();
       };
 
+      // Removed FieldValuesAsText, kept the Lookups for Individuals
       const data = await fetchJson(
-        `${webUrl}/_api/web/lists/getByTitle('Entities')/items(${entity.id})?$select=*`
+        `${webUrl}/_api/web/lists/getByTitle('Entities')/items(${entity.id})?$select=*,Members/Title,Manager/Title,Setter/Title,Beneficiary/Title,Trustee/Title&$expand=Members,Manager,Setter,Beneficiary,Trustee`
       );
 
       setItem(data);
 
       const clientGuids = new Set<string>();
       const entityGuids = new Set<string>();
+      const bankGuids = new Set<string>(); // NEW: Set for Bank GUIDs
+
       collectTermGuids(data.RelatedClient, clientGuids);
       collectTermGuids(data.Entity, entityGuids);
+      collectTermGuids(data.Bank, bankGuids); // NEW: Collect Bank GUIDs
 
+      // NEW: Added the Bank term set to the Promise.all array
       await Promise.all([
         loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms),
-        loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms)
+        loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms),
+        loadTermSet(bankGuids, BANK_TERM_SET_ID, setBankTerms) 
       ]);
     } catch (err) {
       console.error('Entity summary load error', err);
@@ -179,6 +188,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
       setItem(null);
       setClientTerms({});
       setEntityTerms({});
+      setBankTerms({});
     } finally {
       setLoading(false);
     }
@@ -202,15 +212,15 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
 
   const fields = [
     { label: 'Entity Name', value: entity?.label || renderTaxonomy(item.Entity, entityTerms) },
-    // { label: 'Entity Term GUID', value: entity?.termGuid },
     { label: 'Entity Aliases', value: item.EntityAliases },
     { label: 'Related Clients', value: renderTaxonomy(item.RelatedClient, clientTerms) },
     { label: 'Federal Tax ID', value: item.FederalTaxID },
-    { label: 'Bank', value: item.Bank },
+    { label: 'Bank', value: renderTaxonomy(item.Bank, bankTerms) }, // NEW: Uses renderTaxonomy instead of raw value
     { label: 'Account No', value: item.AccountNo },
     { label: 'Routing No', value: item.RoutingNo },
     { label: 'Entity Description', value: stripHtml(item.EntityDesc) },
     { label: 'Members', value: renderPeople(item.Members) },
+    { label: 'Manager', value: renderPeople(item.Manager) },
     { label: 'Setter', value: renderPeople(item.Setter) },
     { label: 'Trustee', value: renderPeople(item.Trustee) },
     { label: 'Beneficiary', value: renderPeople(item.Beneficiary) }
