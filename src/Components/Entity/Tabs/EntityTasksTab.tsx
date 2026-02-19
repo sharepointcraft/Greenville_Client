@@ -4,6 +4,8 @@ import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
 
 const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
 const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
+const ENTITY_TASK_NEW_FORM_URL =
+  'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B6CD2A192-B82C-4304-A936-F400D0E66FEC%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FTasks&Source=https%3A%2F%2Frealitycraftprivatelimited.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FTasks%2FAllItems.aspx&ContentTypeId=0x0100A2DB78381F4D3541900EBE1DE131DD3E0064E6958DA895BF44AC2862F2A62CFE11';
 
 interface EntityTasksTabProps {
   webUrl: string;
@@ -19,6 +21,11 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
   const [entityTerms, setEntityTerms] = React.useState<Record<string, string>>({});
   const [searchText, setSearchText] = React.useState('');
   const [priorityFilter, setPriorityFilter] = React.useState<PriorityFilter>('ALL');
+  const [showAddPopup, setShowAddPopup] = React.useState(false);
+  const [sortConfig, setSortConfig] = React.useState<{ key: 'Title' | 'Entity' | 'AssignedTo' | 'DueDate1' | 'Priority' | 'Status'; direction: 'asc' | 'desc' }>({
+    key: 'Title',
+    direction: 'asc'
+  });
 
   const parseTaxonomyLabel = (value?: any): string => {
     if (!value) return '—';
@@ -223,6 +230,15 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
     void loadTasks();
   }, [entity?.termGuid, webUrl]);
 
+  const openAddTask = () => {
+    setShowAddPopup(true);
+  };
+
+  const closeAddTask = () => {
+    setShowAddPopup(false);
+    void loadTasks();
+  };
+
   const filteredTasks = React.useMemo(() => {
     const search = searchText.trim().toLowerCase();
 
@@ -249,6 +265,47 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
       return fields.includes(search);
     });
   }, [tasks, searchText, priorityFilter, entityTerms]);
+
+  const sortedTasks = React.useMemo(() => {
+    const list = [...filteredTasks];
+    const compare = (a: any, b: any): number => {
+      const { key, direction } = sortConfig;
+      const dir = direction === 'asc' ? 1 : -1;
+
+      if (key === 'Entity') {
+        const av = renderEntity(a).toLowerCase();
+        const bv = renderEntity(b).toLowerCase();
+        return av.localeCompare(bv) * dir;
+      }
+
+      if (key === 'AssignedTo') {
+        const av = renderAssignedTo(a.AssignedTo1).toLowerCase();
+        const bv = renderAssignedTo(b.AssignedTo1).toLowerCase();
+        return av.localeCompare(bv) * dir;
+      }
+
+      if (key === 'DueDate1') {
+        const av = new Date(a.DueDate1 || '').getTime();
+        const bv = new Date(b.DueDate1 || '').getTime();
+        return (av - bv) * dir;
+      }
+
+      const av = String(a[key] || '').toLowerCase();
+      const bv = String(b[key] || '').toLowerCase();
+      return av.localeCompare(bv) * dir;
+    };
+
+    return list.sort(compare);
+  }, [filteredTasks, sortConfig, entityTerms]);
+
+  const handleSort = (key: typeof sortConfig.key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
 
   if (loading) {
     return <div className={styles.loading}>Loading tasks…</div>;
@@ -277,6 +334,10 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
           }}
         >
           Clear Search
+        </button>
+        <div/>
+        <button type="button" className={styles.addBtn} onClick={openAddTask}>
+          + Add Task
         </button>
       </div>
 
@@ -318,36 +379,104 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
         </button>
       </div>
 
-      <div className={styles.table}>
-        <div className={styles.headerRow}>
-          <div>Task Name</div>
-          <div>Entity</div>
-          <div>Assigned To</div>
-          <div>Due Date</div>
-          <div>Priority</div>
-          <div>Status</div>
-        </div>
+      <div className={styles.tableContainer}>
+        <div className={styles.table}>
+          <div className={styles.headerRow}>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Title' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Title')}
+            >
+              <span>Task Name</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Entity' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Entity')}
+            >
+              <span>Entity</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'AssignedTo' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('AssignedTo')}
+            >
+              <span>Assigned To</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'DueDate1' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('DueDate1')}
+            >
+              <span>Due Date</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Priority' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Priority')}
+            >
+              <span>Priority</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Status' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Status')}
+            >
+              <span>Status</span>
+            </button>
+          </div>
 
-        <div className={styles.bodyRows}>
-          {!filteredTasks.length && (
-            <div className={styles.noData}>No tasks found</div>
-          )}
+          <div className={styles.bodyRows}>
+            {!sortedTasks.length && (
+              <div className={styles.noData}>No tasks found</div>
+            )}
 
-          {filteredTasks.map(t => (
-            <div key={t.Id} className={styles.dataRow}>
-              <div className={styles.link}>{t.Title}</div>
-              <div>{renderEntity(t)}</div>
-              <div>{renderAssignedTo(t.AssignedTo1)}</div>
-              <div>{formatDate(t.DueDate1)}</div>
-              <div className={getPriorityClass(t.Priority)}>{t.Priority || '—'}</div>
-              <div className={getStatusClass(t.Status)}>{t.Status || '—'}</div>
-            </div>
-          ))}
+            {sortedTasks.map(t => (
+              <div key={t.Id} className={styles.dataRow}>
+                <div className={styles.link}>{t.Title}</div>
+                <div>{renderEntity(t)}</div>
+                <div>{renderAssignedTo(t.AssignedTo1)}</div>
+                <div>{formatDate(t.DueDate1)}</div>
+                <div className={getPriorityClass(t.Priority)}>{t.Priority || '—'}</div>
+                <div className={getStatusClass(t.Status)}>{t.Status || '—'}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
+
+      {showAddPopup && (
+        <div className={styles.popupOverlay} role="dialog" aria-modal="true" aria-label="Add new task">
+          <div className={styles.popupCard}>
+            <div className={styles.popupHeader}>
+              <span>Add New Task</span>
+              <button
+                type="button"
+                className={styles.popupClose}
+                aria-label="Close add task form"
+                onClick={closeAddTask}
+              >
+                ×
+              </button>
+            </div>
+            <iframe title="Add New Task" src={ENTITY_TASK_NEW_FORM_URL} className={styles.popupFrame} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default EntityTasksTab;
-

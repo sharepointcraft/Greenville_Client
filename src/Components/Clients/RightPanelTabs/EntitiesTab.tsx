@@ -155,26 +155,34 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
 
   /* ---------------- RENDER ---------------- */
 
-  if (loading) {
-    return <div className={styles.loading}>Loading entities…</div>;
-  }
+  const renderEntities = () => {
+    if (loading) {
+      return <div className={styles.loading}>Loading entities…</div>;
+    }
 
-  if (!entities.length) {
-    return <div className={styles.empty}>No related entities found</div>;
-  }
+    if (!entities.length) {
+      return <div className={styles.empty}>No related entities found</div>;
+    }
+
+    return (
+      <div className={styles.list}>
+        {entities.map(entity => (
+          <button
+            key={entity.termGuid}
+            type="button"
+            className={styles.entityButton}
+            onClick={() => onEntityClick?.(entity)}
+          >
+            {entity.label}
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className={styles.container}>
-      {entities.map(entity => (
-        <button
-          key={entity.termGuid}
-          type="button"
-          className={styles.entityButton}
-          onClick={() => onEntityClick?.(entity)}
-        >
-          {entity.label}
-        </button>
-      ))}
+      {renderEntities()}
     </div>
   );
 };

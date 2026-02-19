@@ -22,6 +22,10 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [sortConfig, setSortConfig] = React.useState<{ key: keyof Document; direction: 'asc' | 'desc' }>({
+    key: 'name',
+    direction: 'asc'
+  });
   const subTabs = React.useMemo(
     () => [
       'All Documents',
@@ -148,6 +152,36 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     return matchesActivity && matchesSearch;
   });
 
+  const sortedDocuments = React.useMemo(() => {
+    const list = [...filteredDocuments];
+
+    const compare = (a: Document, b: Document): number => {
+      const { key, direction } = sortConfig;
+      const dir = direction === 'asc' ? 1 : -1;
+
+      if (key === 'modifiedDate') {
+        const da = new Date(a.modifiedDate).getTime();
+        const db = new Date(b.modifiedDate).getTime();
+        return (da - db) * dir;
+      }
+
+      const av = (a[key] || '').toString().toLowerCase();
+      const bv = (b[key] || '').toString().toLowerCase();
+      return av.localeCompare(bv) * dir;
+    };
+
+    return list.sort(compare);
+  }, [filteredDocuments, sortConfig]);
+
+  const handleSort = (key: keyof Document) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
   if (loading) {
     return <div className={styles.loading}>Loading documents…</div>;
   }
@@ -191,35 +225,85 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
         ))}
       </div>
 
-      <div className={styles.table}>
-        <div className={styles.headerRow}>
-          <div>Document Name</div>
-          <div>Activity</div>
-          <div>Entity</div>
-          <div>Status</div>
-          <div>Modified Date</div>
-          <div>Modified By</div>
-        </div>
+      <div className={styles.tableContainer}>
+        <div className={styles.table}>
+          <div className={styles.headerRow}>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'name' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('name')}
+            >
+              <span>Document Name</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'activity' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('activity')}
+            >
+              <span>Activity</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'entity' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('entity')}
+            >
+              <span>Entity</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'status' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('status')}
+            >
+              <span>Status</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'modifiedDate' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('modifiedDate')}
+            >
+              <span>Modified Date</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'modifiedBy' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('modifiedBy')}
+            >
+              <span>Modified By</span>
+            </button>
+          </div>
 
-        <div className={styles.bodyRows}>
-          {!filteredDocuments.length && (
-            <div className={styles.noData}>No documents found</div>
-          )}
+          <div className={styles.bodyRows}>
+            {!filteredDocuments.length && (
+              <div className={styles.noData}>No documents found</div>
+            )}
 
-          {filteredDocuments.map((doc, index) => (
-            <div key={`${doc.absoluteUrl}-${index}`} className={styles.dataRow}>
-              <div className={styles.link}>
-                <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer">
-                  {doc.name}
-                </a>
+            {sortedDocuments.map((doc, index) => (
+              <div key={`${doc.absoluteUrl}-${index}`} className={styles.dataRow}>
+                <div className={styles.link}>
+                  <a href={doc.absoluteUrl} target="_blank" rel="noopener noreferrer">
+                    {doc.name}
+                  </a>
+                </div>
+                <div>{doc.activity}</div>
+                <div>{doc.entity}</div>
+                <div>{doc.status || '-'}</div>
+                <div>{doc.modifiedDate}</div>
+                <div>{doc.modifiedBy}</div>
               </div>
-              <div>{doc.activity}</div>
-              <div>{doc.entity}</div>
-              <div>{doc.status || '-'}</div>
-              <div>{doc.modifiedDate}</div>
-              <div>{doc.modifiedBy}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>

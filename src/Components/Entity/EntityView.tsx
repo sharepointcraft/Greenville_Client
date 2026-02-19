@@ -10,6 +10,8 @@ import EntityTasksTab from './Tabs/EntityTasksTab';
 
 const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
 const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
+const ENTITIES_NEW_FORM_URL =
+  'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B5B64CCEF-5176-4D1E-AFD2-BF67366BEA81%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FEntities&Source=https%3A%2F%2Frealitycraftprivatelimited.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FEntities%2FAllItems.aspx&ContentTypeId=0x010005A065D7CC77D146A540E9E94E26F332009595D5DD684D9F47BDF0DE601379CD13';
 
 type EntityTabKey = 'Summary' | 'Documents' | 'Tasks';
 
@@ -52,7 +54,12 @@ const EntityView: React.FC<EntityViewProps> = ({
   const [selectedEntity, setSelectedEntity] = React.useState<EntitySelection | null>(initialEntity);
   const [entities, setEntities] = React.useState<EntitySelection[]>([]);
   const [loadingEntities, setLoadingEntities] = React.useState(true);
+  const [showAddPopup, setShowAddPopup] = React.useState(false);
+  const [newFormUrl, setNewFormUrl] = React.useState<string | null>(null);
+  const [formLoading, setFormLoading] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
   const selectedEntityRef = React.useRef<EntitySelection | null>(initialEntity);
+  const cancelledRef = React.useRef(false);
 
   React.useEffect(() => {
     selectedEntityRef.current = selectedEntity;
@@ -63,119 +70,147 @@ const EntityView: React.FC<EntityViewProps> = ({
     selectedEntityRef.current = initialEntity;
   }, [initialEntity]);
 
-  React.useEffect(() => {
-    let cancelled = false;
+  const loadEntities = React.useCallback(async () => {
+    try {
+      if (cancelledRef.current) return;
+      setLoadingEntities(true);
 
-    const fetchJson = async (url: string) => {
-      const resp = await fetch(url, {
-        headers: { Accept: 'application/json;odata=nometadata' }
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      return resp.json();
-    };
-
-    const loadEntities = async () => {
-      try {
-        setLoadingEntities(true);
-
-        const data = await fetchJson(
-          `${webUrl}/_api/web/lists/getByTitle('Entities')/items?` +
-            `$select=Id,Entity,RelatedClient&$top=5000`
-        );
-
-        const matched = data.value || [];
-
-        if (!matched.length) {
-          if (!cancelled) {
-            setEntities([]);
-            setSelectedEntity(null);
-          }
-          return;
-        }
-
-        const entityGuids = new Set<string>();
-        const guidToItemId = new Map<string, number>();
-
-        matched.forEach((item: any) => {
-          const guids = new Set<string>();
-          collectTermGuids(item.Entity, guids);
-          guids.forEach(g => {
-            entityGuids.add(g);
-            if (!guidToItemId.has(g)) {
-              guidToItemId.set(g, item.Id);
-            }
-          });
+      const fetchJson = async (url: string) => {
+        const resp = await fetch(url, {
+          headers: { Accept: 'application/json;odata=nometadata' }
         });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+      };
 
-        const termData = await fetchJson(
-          `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`
-        );
+      const data = await fetchJson(
+        `${webUrl}/_api/web/lists/getByTitle('Entities')/items?` +
+          `$select=Id,Entity,RelatedClient&$top=5000`
+      );
 
-        const labelMap = new Map<string, string>();
-        (termData.value || []).forEach((t: any) => {
-          const id = String(t.id).toLowerCase();
-          if (entityGuids.has(id)) {
-            const label =
-              t.labels?.find((l: any) => l.isDefault)?.name ||
-              t.labels?.[0]?.name;
-            if (label) {
-              labelMap.set(id, label);
-            }
-          }
-        });
+      const matched = data.value || [];
 
-        const list: EntitySelection[] = [];
-        entityGuids.forEach(guid => {
-          list.push({
-            id: guidToItemId.get(guid),
-            termGuid: guid,
-            label: labelMap.get(guid) || guid,
-            relatedClientGuid: initialEntity?.relatedClientGuid || ''
-          });
-        });
-
-        list.sort((a, b) => a.label.localeCompare(b.label));
-
-        if (cancelled) return;
-
-        setEntities(list);
-        setSelectedEntity(() => {
-          const current = selectedEntityRef.current;
-          const exists = current && list.some(e => e.termGuid === current.termGuid);
-          if (exists) {
-            return current;
-          }
-          const next = list[0] || null;
-          selectedEntityRef.current = next;
-          if (next) {
-            onEntityChange?.(next);
-          }
-          return next;
-        });
-      } catch (err) {
-        console.error('EntityView load error', err);
-        if (!cancelled) {
+      if (!matched.length) {
+        if (!cancelledRef.current) {
           setEntities([]);
           setSelectedEntity(null);
         }
-      } finally {
-        if (!cancelled) {
-          setLoadingEntities(false);
-        }
+        return;
       }
-    };
 
-    void loadEntities();
+      const entityGuids = new Set<string>();
+      const guidToItemId = new Map<string, number>();
 
-    return () => {
-      cancelled = true;
-    };
+      matched.forEach((item: any) => {
+        const guids = new Set<string>();
+        collectTermGuids(item.Entity, guids);
+        guids.forEach(g => {
+          entityGuids.add(g);
+          if (!guidToItemId.has(g)) {
+            guidToItemId.set(g, item.Id);
+          }
+        });
+      });
+
+      const termData = await fetchJson(
+        `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`
+      );
+
+      const labelMap = new Map<string, string>();
+      (termData.value || []).forEach((t: any) => {
+        const id = String(t.id).toLowerCase();
+        if (entityGuids.has(id)) {
+          const label =
+            t.labels?.find((l: any) => l.isDefault)?.name ||
+            t.labels?.[0]?.name;
+          if (label) {
+            labelMap.set(id, label);
+          }
+        }
+      });
+
+      const list: EntitySelection[] = [];
+      entityGuids.forEach(guid => {
+        list.push({
+          id: guidToItemId.get(guid),
+          termGuid: guid,
+          label: labelMap.get(guid) || guid,
+          relatedClientGuid: initialEntity?.relatedClientGuid || ''
+        });
+      });
+
+      list.sort((a, b) => a.label.localeCompare(b.label));
+
+      if (cancelledRef.current) return;
+
+      setEntities(list);
+      setSelectedEntity(() => {
+        const current = selectedEntityRef.current;
+        const exists = current && list.some(e => e.termGuid === current.termGuid);
+        if (exists) {
+          return current;
+        }
+        const next = list[0] || null;
+        selectedEntityRef.current = next;
+        if (next) {
+          onEntityChange?.(next);
+        }
+        return next;
+      });
+    } catch (err) {
+      console.error('EntityView load error', err);
+      if (!cancelledRef.current) {
+        setEntities([]);
+        setSelectedEntity(null);
+      }
+    } finally {
+      if (!cancelledRef.current) {
+        setLoadingEntities(false);
+      }
+    }
   }, [webUrl, initialEntity?.relatedClientGuid, onEntityChange]);
+
+  React.useEffect(() => {
+    cancelledRef.current = false;
+    void loadEntities();
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [loadEntities]);
 
   const handleSelectEntity = (entity: EntitySelection): void => {
     setSelectedEntity(entity);
     selectedEntityRef.current = entity;
     onEntityChange?.(entity);
+  };
+
+  const fetchNewFormUrl = async (): Promise<string | null> => {
+    try {
+      setFormError(null);
+      setFormLoading(true);
+      const absoluteUrl = ENTITIES_NEW_FORM_URL;
+      setNewFormUrl(absoluteUrl);
+      return absoluteUrl;
+    } catch (err) {
+      console.error('EntityView new form url error', err);
+      setFormError('Unable to open the add entity form.');
+      return null;
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const openAddEntityForm = async () => {
+    setShowAddPopup(true);
+    if (!newFormUrl && !formLoading) {
+      await fetchNewFormUrl();
+    }
+  };
+
+  const closeAddEntityForm = () => {
+    setShowAddPopup(false);
+    setFormError(null);
+    void loadEntities();
   };
 
   const renderTabContent = () => {
@@ -207,6 +242,14 @@ const EntityView: React.FC<EntityViewProps> = ({
           <div className={leftPanelStyles.leftPanel}>
             <div className={leftPanelStyles.panelHeader}>
               <span className={leftPanelStyles.headerTitle}>Entities</span>
+              <button
+                type="button"
+                className={leftPanelStyles.addButton}
+                onClick={openAddEntityForm}
+                disabled={formLoading && !newFormUrl}
+              >
+                + Add Entity
+              </button>
             </div>
             <div className={leftPanelStyles.clientList}>
               {loadingEntities && (
@@ -255,6 +298,42 @@ const EntityView: React.FC<EntityViewProps> = ({
           </div>
         </div>
       </div>
+
+      {showAddPopup && (
+        <div
+          className={leftPanelStyles.popupOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Add new entity"
+        >
+          <div className={leftPanelStyles.popupCard}>
+            <div className={leftPanelStyles.popupHeader}>
+              <span>Add New Entity</span>
+              <button
+                type="button"
+                className={leftPanelStyles.popupClose}
+                aria-label="Close add entity form"
+                onClick={closeAddEntityForm}
+              >
+                ×
+              </button>
+            </div>
+            {formError ? (
+              <div className={styles.infoState}>{formError}</div>
+            ) : formLoading && !newFormUrl ? (
+              <div className={styles.infoState}>Preparing form…</div>
+            ) : newFormUrl ? (
+              <iframe
+                title="Add New Entity"
+                src={newFormUrl}
+                className={leftPanelStyles.popupFrame}
+              />
+            ) : (
+              <div className={styles.infoState}>Form URL not available.</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

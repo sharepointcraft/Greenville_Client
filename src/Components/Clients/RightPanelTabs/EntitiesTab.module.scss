@@ -3,6 +3,10 @@
   padding: 18px;
   border-radius: 4px;
 }
+.list {
+  display: flex;
+  flex-direction: column;
+}
  
 .entityButton {
   width: 100%;

@@ -26,6 +26,10 @@ const TasksTab: React.FC<TasksTabProps> = ({
   const [searchText, setSearchText] = React.useState('');
   const [priorityFilter, setPriorityFilter] = React.useState<PriorityFilter>('ALL');
   const [showAddPopup, setShowAddPopup] = React.useState(false);
+  const [sortConfig, setSortConfig] = React.useState<{ key: 'Title' | 'Entity' | 'AssignedTo' | 'DueDate1' | 'Priority' | 'Status'; direction: 'asc' | 'desc' }>({
+    key: 'Title',
+    direction: 'asc'
+  });
 
   /* ---------------- HELPERS ---------------- */
 
@@ -208,6 +212,47 @@ const parseTaxonomyLabel = (value?: any): string => {
       return fields.includes(search);
     });
   }, [tasks, searchText, priorityFilter, entityTerms]);
+
+  const sortedTasks = React.useMemo(() => {
+    const list = [...filteredTasks];
+    const compare = (a: any, b: any): number => {
+      const { key, direction } = sortConfig;
+      const dir = direction === 'asc' ? 1 : -1;
+
+      if (key === 'Entity') {
+        const av = renderEntity(a).toLowerCase();
+        const bv = renderEntity(b).toLowerCase();
+        return av.localeCompare(bv) * dir;
+      }
+
+      if (key === 'AssignedTo') {
+        const av = renderAssignedTo(a.AssignedTo1).toLowerCase();
+        const bv = renderAssignedTo(b.AssignedTo1).toLowerCase();
+        return av.localeCompare(bv) * dir;
+      }
+
+      if (key === 'DueDate1') {
+        const av = new Date(a.DueDate1 || '').getTime();
+        const bv = new Date(b.DueDate1 || '').getTime();
+        return (av - bv) * dir;
+      }
+
+      const av = String(a[key] || '').toLowerCase();
+      const bv = String(b[key] || '').toLowerCase();
+      return av.localeCompare(bv) * dir;
+    };
+
+    return list.sort(compare);
+  }, [filteredTasks, sortConfig, entityTerms]);
+
+  const handleSort = (key: typeof sortConfig.key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
 
   /* ---------------- MAIN LOAD ---------------- */
 
@@ -399,31 +444,81 @@ const loadTasks = async () => {
         </button>
       </div>
 
-      <div className={styles.table}>
-        <div className={styles.headerRow}>
-          <div>Task Name</div>
-          <div>Entity</div>
-          <div>Assigned To</div>
-          <div>Due Date</div>
-          <div>Priority</div>
-          <div>Status</div>
-        </div>
+      <div className={styles.tableContainer}>
+        <div className={styles.table}>
+          <div className={styles.headerRow}>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Title' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Title')}
+            >
+              <span>Task Name</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Entity' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Entity')}
+            >
+              <span>Entity</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'AssignedTo' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('AssignedTo')}
+            >
+              <span>Assigned To</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'DueDate1' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('DueDate1')}
+            >
+              <span>Due Date</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Priority' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Priority')}
+            >
+              <span>Priority</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerCell} ${styles.sortable} ${
+                sortConfig.key === 'Status' ? styles[`sort${sortConfig.direction}`] : ''
+              }`}
+              onClick={() => handleSort('Status')}
+            >
+              <span>Status</span>
+            </button>
+          </div>
 
-        <div className={styles.bodyRows}>
-          {!filteredTasks.length && (
-            <div className={styles.noData}>No tasks found</div>
-          )}
+          <div className={styles.bodyRows}>
+            {!sortedTasks.length && (
+              <div className={styles.noData}>No tasks found</div>
+            )}
 
-          {filteredTasks.map(t => (
-            <div key={t.Id} className={styles.dataRow}>
-              <div className={styles.link}>{t.Title}</div>
-              <div>{renderEntity(t)}</div>
-              <div>{renderAssignedTo(t.AssignedTo1)}</div>
-              <div>{formatDate(t.DueDate1)}</div>
-              <div className={getPriorityClass(t.Priority)}>{t.Priority || '—'}</div>
-              <div className={getStatusClass(t.Status)}>{t.Status || '—'}</div>
-            </div>
-          ))}
+            {sortedTasks.map(t => (
+              <div key={t.Id} className={styles.dataRow}>
+                <div className={styles.link}>{t.Title}</div>
+                <div>{renderEntity(t)}</div>
+                <div>{renderAssignedTo(t.AssignedTo1)}</div>
+                <div>{formatDate(t.DueDate1)}</div>
+                <div className={getPriorityClass(t.Priority)}>{t.Priority || '—'}</div>
+                <div className={getStatusClass(t.Status)}>{t.Status || '—'}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
