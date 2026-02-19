@@ -29,7 +29,6 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const loadClientsFromTerms = async () => {
     try {
-      /* 1️⃣ Load Clients list items */
       const listResp = await fetch(
         `${webUrl}/_api/web/lists/getByTitle('Clients')/items?$select=Id,Client`,
         { headers: { Accept: 'application/json;odata=nometadata' } }
@@ -53,7 +52,6 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         return;
       }
 
-      /* 2️⃣ Load Term Store */
       const termResp = await fetch(
         `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${TERM_SET_ID}')/terms`,
         { headers: { Accept: 'application/json' } }
@@ -66,7 +64,6 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         termMap.set(t.id.toLowerCase(), t.labels[0].name);
       });
 
-      /* 3️⃣ Build final client list */
       const finalItems = usedTerms
         .filter(u => termMap.has(u.termGuid.toLowerCase()))
         .map(u => ({
@@ -90,6 +87,38 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   React.useEffect(() => {
     void loadClientsFromTerms();
   }, []);
+
+  const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
+    try {
+      const iframe = e.target as HTMLIFrameElement;
+      const iframeWindow = iframe.contentWindow;
+      const iframeUrl = iframeWindow?.location.href;
+      
+      if (iframeUrl) {
+        const urlObj = new URL(iframeUrl);
+        
+        // 1. FALLBACK: If the list view somehow fully loads, close it normally.
+        if (urlObj.pathname.toLowerCase().endsWith('allitems.aspx')) {
+          setShowAddPopup(false);
+          void loadClientsFromTerms();
+          return;
+        }
+
+        // 2. FAST CLOSE: When the list form starts to leave after clicking Save/Cancel, close instantly.
+        if (iframeWindow) {
+          iframeWindow.addEventListener('unload', () => {
+            // A tiny 100ms delay ensures SharePoint finishes sending the Save data before we destroy the popup
+            setTimeout(() => {
+              setShowAddPopup(false);
+              void loadClientsFromTerms();
+            }, 100);
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("Iframe load check:", error);
+    }
+  };
 
   return (
     <div className={styles.leftPanel}>
@@ -140,6 +169,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
               title="Add New Client"
               src={ADD_NEW_CLIENT_URL}
               className={styles.popupFrame}
+              onLoad={handleIframeLoad} 
             />
           </div>
         </div>
