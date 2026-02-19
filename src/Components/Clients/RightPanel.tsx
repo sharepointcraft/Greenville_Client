@@ -12,10 +12,17 @@ interface RightPanelProps {
   webUrl: string;
   clientId: number | null;
   clientTermGuid: string | null;
+  clientName?: string | null; // NEW: Added clientName prop
   onEntityOpen?: (entity: EntitySelection) => void;
 }
 
-const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId, clientTermGuid, onEntityOpen }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ 
+  webUrl, 
+  clientId, 
+  clientTermGuid, 
+  clientName, // NEW: Destructured clientName
+  onEntityOpen 
+}) => {
   const [activeTab, setActiveTab] = React.useState<TabKey>('Summary');
 
   if (!clientId) {
@@ -61,6 +68,14 @@ const RightPanel: React.FC<RightPanelProps> = ({ webUrl, clientId, clientTermGui
 
   return (
     <div className={styles.rightPanel}>
+      
+      {/* NEW: Persistent Header for the Client Name */}
+      {clientName && (
+        <div className={styles.clientHeader}>
+          <h2>{clientName}</h2>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className={styles.tabs}>
         {tabs.map(tab => (

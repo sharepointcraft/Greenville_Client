@@ -25,13 +25,14 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
   const collectTermGuids = (val: any, set: Set<string>) => {
     if (!val) return;
 
+    // FIX: Changed "value" to "val" to match the parameter name
     if (typeof val === 'string') {
       val
         .split(';#')
         .filter(v => v.includes('|'))
         .forEach(v => {
           const parts = v.split('|');
-          if (parts[1]) set.add(parts[1]);
+          if (parts[1]) set.add(parts[1].toLowerCase());
         });
       return;
     }
@@ -42,7 +43,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     }
 
     if (val.TermGuid) {
-      set.add(val.TermGuid);
+      set.add(String(val.TermGuid).toLowerCase());
     }
   };
 
@@ -101,14 +102,11 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
 
     if (!date || Number.isNaN(date.getTime())) return value;
 
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'UTC',
-      month: '2-digit',
-      day: '2-digit',
-      year: 'numeric'
-    });
+    const month = date.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const day = date.toLocaleDateString('en-US', { day: '2-digit', timeZone: 'UTC' });
+    const year = date.toLocaleDateString('en-US', { year: 'numeric', timeZone: 'UTC' });
 
-    return formatter.format(date).replace(/\//g, '-');
+    return `${month}-${day}-${year}`;
   };
 
   const getListLabels = (value: any): string[] => {
@@ -154,7 +152,11 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     ) : null;
   };
 
-  const hasValue = (v: any) => v !== null && v !== undefined && v !== '';
+  const hasValue = (v: any) => {
+    if (v === null || v === undefined || v === '' || v === '—') return false;
+    if (Array.isArray(v) && v.length === 0) return false;
+    return true;
+  };
 
   /* ================= TERM STORE ================= */
 
@@ -163,6 +165,10 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     setId: string,
     setState: React.Dispatch<React.SetStateAction<Record<string, string>>>
   ) => {
+    if (!guids.size) {
+      setState({});
+      return;
+    }
     const resp = await fetch(
       `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${setId}')/terms`,
       { headers: { Accept: 'application/json' } }
@@ -172,11 +178,11 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     const map: Record<string, string> = {};
 
     (data.value || []).forEach((t: any) => {
-      if (guids.has(t.id)) {
+      if (guids.has(t.id.toLowerCase())) {
         const label =
           t.labels?.find((l: any) => l.isDefault)?.name ||
           t.labels?.[0]?.name;
-        if (label) map[t.id] = label;
+        if (label) map[t.id.toLowerCase()] = label;
       }
     });
 
@@ -186,6 +192,9 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
   /* ================= LOAD CLIENT ================= */
 
   const loadSummary = async () => {
+    // 1. Instantly clear the item so the component goes into "Loading..." state
+    setItem(null); 
+
     const resp = await fetch(
       `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?` +
         `$select=*,Children/Id,Children/Title,Siblings/Id,Siblings/Title,Parents/Id,Parents/Title&` +
@@ -194,7 +203,8 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     );
 
     const data = await resp.json();
-    setItem(data);
+    
+    // NOTE: We do NOT call setItem(data) here anymore! We wait for the terms to finish.
 
     const clientGuids = new Set<string>();
     const entityGuids = new Set<string>();
@@ -203,12 +213,14 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     collectTermGuids(data.RelatedClient, clientGuids);
     collectTermGuids(data.RelatedEntity, entityGuids);
 
-    if (clientGuids.size) {
-      await loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms);
-    }
-    if (entityGuids.size) {
-      await loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms);
-    }
+    // 2. Wait for all taxonomy labels to download fully
+    await Promise.all([
+      loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms),
+      loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms)
+    ]);
+
+    // 3. Now that everything is 100% loaded, render the component. No more GUID flashing!
+    setItem(data);
   };
 
   React.useEffect(() => {
@@ -232,7 +244,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     { label: 'Drivers License', value: item.DriversLicense },
     { label: 'P.O. Box', value: item.POBox },
     { label: 'DL State Of Issue', value: item.DLStateOfIssue },
-    { label: 'DL Expire', value: item.DLExpire }
+    { label: 'DL Expire', value: formatDate(item.DLExpire) }
   ].filter(f => hasValue(f.value));
 
   const familySection =
@@ -241,13 +253,12 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     getListLabels(item.Children).length > 0 ||
     hasValue(item.MinorChild);
 
-  const relationshipSection = item.RelatedClient || item.RelatedEntity;
+  const relationshipSection = getTaxonomyLabels(item.RelatedClient, clientTerms).length > 0 || getTaxonomyLabels(item.RelatedEntity, entityTerms).length > 0;
 
   /* ================= RENDER ================= */
 
   return (
     <div className={styles.summaryRoot}>
-      {/* SECTION 1: CORE DETAILS */}
       <div className={styles.section}>
         {chunk(coreFields, 3).map((row, i) => (
           <div className={styles.rowWrapper} key={i}>
@@ -263,7 +274,6 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
         ))}
       </div>
 
-      {/* SECTION 2: FAMILY */}
       {familySection && (
         <>
           <div className={styles.separator} />
@@ -296,21 +306,20 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
         </>
       )}
 
-      {/* SECTION 3: RELATIONSHIPS */}
       {relationshipSection && (
         <>
           <div className={styles.separator} />
           <div className={styles.section}>
             <div className={styles.rowWrapper}>
               <div className={styles.row}>
-                {item.RelatedClient && (
+                {getTaxonomyLabels(item.RelatedClient, clientTerms).length > 0 && (
                   <div className={styles.cell}>
                     <span className={styles.label}>Related Clients</span>
                     {renderBulletList(getClientTaxonomyLabels(item.RelatedClient))}
                   </div>
                 )}
 
-                {item.RelatedEntity && (
+                {getTaxonomyLabels(item.RelatedEntity, entityTerms).length > 0 && (
                   <div className={styles.cell}>
                     <span className={styles.label}>Related Entities</span>
                     {renderBulletList(getEntityTaxonomyLabels(item.RelatedEntity))}

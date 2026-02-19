@@ -8,7 +8,8 @@ interface ClientViewProps {
   webUrl: string;
   selectedClientId: number | null;
   selectedClientTermGuid: string | null;
-  onSelectClient: (id: number, termGuid: string) => void;
+  selectedClientName: string | null;
+  onSelectClient: (id: number, termGuid: string, name: string) => void;
   onEntityOpen: (entity: EntitySelection) => void;
 }
 
@@ -16,6 +17,7 @@ const ClientView: React.FC<ClientViewProps> = ({
   webUrl,
   selectedClientId,
   selectedClientTermGuid,
+  selectedClientName,
   onSelectClient,
   onEntityOpen
 }) => (
@@ -33,6 +35,7 @@ const ClientView: React.FC<ClientViewProps> = ({
         webUrl={webUrl}
         clientId={selectedClientId}
         clientTermGuid={selectedClientTermGuid}
+        clientName={selectedClientName}
         onEntityOpen={onEntityOpen}
       />
     </div>

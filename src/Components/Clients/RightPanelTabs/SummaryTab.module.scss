@@ -5,12 +5,12 @@
 
 /* SECTION = big white space between sections */
 .section {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 /* OUTER WRAPPER = white gap between rows */
 .rowWrapper {
-  margin-bottom: 8px; /* small white space between rows */
+  margin-bottom: 3px; /* small white space between rows */
 }
 
 /* ROW */
@@ -19,7 +19,7 @@
   padding: 14px 18px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 40px;
+  gap: 10px;
   border-radius: 2px;
 }
 

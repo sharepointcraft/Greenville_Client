@@ -139,7 +139,17 @@
 .detailSpacer {
   height: 1px;
 }
+.clientHeader {
+  margin-bottom: 20px;
+  padding-left: 10px; // Aligns it nicely with the tabs
 
+  h2 {
+    font-size: 24px;
+    font-weight: 600;
+    color: #333; // Or whatever your dark text color is
+    margin: 0;
+  }
+}
 @media (max-width: 860px) {
   .rightPanel {
     padding: 14px 16px;

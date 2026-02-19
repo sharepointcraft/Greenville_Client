@@ -278,7 +278,7 @@ const EntityView: React.FC<EntityViewProps> = ({
                 onClick={openAddEntityForm}
                 disabled={formLoading && !newFormUrl}
               >
-                + Add Entity
+                + Add New
               </button>
             </div>
             <div className={leftPanelStyles.clientList}>
@@ -309,6 +309,11 @@ const EntityView: React.FC<EntityViewProps> = ({
 
         <div className={`${layoutStyles.rightColumn} ${layoutStyles.panelWrapper}`}>
           <div className={rightPanelStyles.rightPanel}>
+            {selectedEntity && (
+              <div className={rightPanelStyles.clientHeader}>
+                <h2>{selectedEntity.label}</h2>
+              </div>
+            )}
             <div className={rightPanelStyles.tabs}>
               {(['Summary', 'Documents', 'Tasks'] as EntityTabKey[]).map(tab => (
                 <button
