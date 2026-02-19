@@ -1,0 +1,42 @@
+import * as React from 'react';
+import layoutStyles from '../../webparts/greenVilleClient/components/GreenVilleClient.module.scss';
+import LeftPanel from './LeftPanel';
+import RightPanel from './RightPanel';
+import type { EntitySelection } from './RightPanelTabs/EntitiesTab';
+
+interface ClientViewProps {
+  webUrl: string;
+  selectedClientId: number | null;
+  selectedClientTermGuid: string | null;
+  onSelectClient: (id: number, termGuid: string) => void;
+  onEntityOpen: (entity: EntitySelection) => void;
+}
+
+const ClientView: React.FC<ClientViewProps> = ({
+  webUrl,
+  selectedClientId,
+  selectedClientTermGuid,
+  onSelectClient,
+  onEntityOpen
+}) => (
+  <div className={layoutStyles.layout}>
+    <div className={`${layoutStyles.leftColumn} ${layoutStyles.panelWrapper}`}>
+      <LeftPanel
+        webUrl={webUrl}
+        selectedClientId={selectedClientId}
+        onSelect={onSelectClient}
+      />
+    </div>
+
+    <div className={`${layoutStyles.rightColumn} ${layoutStyles.panelWrapper}`}>
+      <RightPanel
+        webUrl={webUrl}
+        clientId={selectedClientId}
+        clientTermGuid={selectedClientTermGuid}
+        onEntityOpen={onEntityOpen}
+      />
+    </div>
+  </div>
+);
+
+export default ClientView;

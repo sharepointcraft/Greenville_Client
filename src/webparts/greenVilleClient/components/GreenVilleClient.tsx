@@ -1,12 +1,15 @@
 import * as React from 'react';
 import styles from './GreenVilleClient.module.scss';
 import type { IGreenVilleClientProps } from './IGreenVilleClientProps';
-import LeftPanel from '../../../Components/LeftPanel';
-import RightPanel from '../../../Components/RightPanel';
+import EntityView from '../../../Components/Entity/EntityView';
+import ClientView from '../../../Components/Clients/ClientView';
+import type { EntitySelection } from '../../../Components/Clients/RightPanelTabs/EntitiesTab';
 
 interface IGreenVilleClientState {
   selectedClientId: number | null;
   selectedClientTermGuid: string | null;
+  activeEntity: EntitySelection | null;
+  viewMode: 'clients' | 'entity';
 }
 
 export default class GreenVilleClient extends React.Component<
@@ -19,17 +22,28 @@ export default class GreenVilleClient extends React.Component<
     super(props);
     this.state = {
       selectedClientId: null,
-      selectedClientTermGuid: null
+      selectedClientTermGuid: null,
+      activeEntity: null,
+      viewMode: 'clients'
     };
   }
 
-private handleSelectClient = (id: number, termGuid: string): void => {
-  this.setState({
-    selectedClientId: id,
-    selectedClientTermGuid: termGuid
-  });
-};
+  private handleSelectClient = (id: number, termGuid: string): void => {
+    this.setState({
+      selectedClientId: id,
+      selectedClientTermGuid: termGuid,
+      activeEntity: null,
+      viewMode: 'clients'
+    });
+  };
 
+  private handleOpenEntity = (entity: EntitySelection): void => {
+    this.setState({ activeEntity: entity, viewMode: 'entity' });
+  };
+
+  private handleEntityChange = (entity: EntitySelection): void => {
+    this.setState({ activeEntity: entity });
+  };
 
   public componentDidMount(): void {
     // Hide SharePoint chrome controls
@@ -55,25 +69,44 @@ private handleSelectClient = (id: number, termGuid: string): void => {
 
   public render(): React.ReactElement<IGreenVilleClientProps> {
     const { webUrl } = this.props;
-    const { selectedClientId, selectedClientTermGuid } = this.state;
+    const { selectedClientId, selectedClientTermGuid, activeEntity, viewMode } = this.state;
+
+    const showEntity = viewMode === 'entity';
 
     return (
-      <div className={styles.layout}>
-        <div className={`${styles.leftColumn} ${styles.panelWrapper}`}>
-          <LeftPanel
-            webUrl={webUrl}
-            selectedClientId={selectedClientId}
-            onSelect={this.handleSelectClient}
-          />
+      <div className={styles.root}>
+        <div className={styles.topTabs}>
+          <button
+            type="button"
+            className={`${styles.topTab} ${viewMode === 'clients' ? styles.topTabActive : ''}`}
+            onClick={() => this.setState({ viewMode: 'clients' })}
+          >
+            Clients
+          </button>
+          <button
+            type="button"
+            className={`${styles.topTab} ${viewMode === 'entity' ? styles.topTabActive : ''}`}
+            onClick={() => this.setState({ viewMode: 'entity' })}
+          >
+            Entity
+          </button>
         </div>
 
-        <div className={`${styles.rightColumn} ${styles.panelWrapper}`}>
-          <RightPanel
+        {showEntity ? (
+          <EntityView
             webUrl={webUrl}
-            clientId={selectedClientId}
-            clientTermGuid={selectedClientTermGuid}
+            initialEntity={activeEntity}
+            onEntityChange={this.handleEntityChange}
           />
-        </div>
+        ) : (
+          <ClientView
+            webUrl={webUrl}
+            selectedClientId={selectedClientId}
+            selectedClientTermGuid={selectedClientTermGuid}
+            onSelectClient={this.handleSelectClient}
+            onEntityOpen={this.handleOpenEntity}
+          />
+        )}
       </div>
     );
   }

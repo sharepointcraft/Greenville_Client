@@ -28,16 +28,17 @@
 }
  
 .searchSection {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
- 
+
 .searchBar {
   display: flex;
   align-items: center;
   gap: 8px;
   max-width: 470px;
+  width: 100%;
 }
- 
+
 .searchInput {
   height: 30px;
   padding: 0 8px;
@@ -45,14 +46,14 @@
   border-radius: 2px;
   width: 190px;
   font-size: 12px;
- 
+
   &:focus {
     outline: none;
     border-color: #0078d4;
     box-shadow: 0 0 0 1px rgba(0, 120, 212, 0.2);
   }
 }
- 
+
 .clearButton {
   height: 30px;
   padding: 0 12px;
@@ -62,7 +63,7 @@
   cursor: pointer;
   font-size: 12px;
   color: #5f5f5f;
- 
+
   &:hover {
     background: #edebe9;
   }
@@ -70,11 +71,11 @@
  
 .filterSection {
   display: flex;
-  gap: 16px;
-  margin-bottom: 6px;
-  // max-width: 470px;
+  gap: 5px;
+  margin: 6px 0 10px;
+  flex-wrap: wrap;
 }
- 
+
 .filterButton {
   padding: 5px 10px;
   background: transparent;
@@ -83,39 +84,54 @@
   cursor: pointer;
   font-size: 12px;
   color: #605e5c;
- 
+  transition: color 0.15s ease, background 0.15s ease, border 0.15s ease;
+
   &:hover {
     color: #323130;
   }
 }
- 
+
 .activeFilter {
   color: #ffffff;
   background: #2f8a33;
   border-color: #2f8a33;
   font-weight: 600;
- 
-  &:hover {
-    color: #ffffff;
-  }
 }
  
 .tableContainer {
   overflow-x: auto;
   border: 1px solid #d1d1d1;
   border-radius: 2px;
-  scrollbar-width: none;
- 
+  scrollbar-width: thin;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  background: #fff;
+  padding-bottom: 6px;
+
   /* Hide scrollbar arrows in webkit browsers */
   &::-webkit-scrollbar-button {
     display: none;
   }
+}
+
+.tableContainer::-webkit-scrollbar {
+  height: 10px;
+}
+
+.tableContainer::-webkit-scrollbar-thumb {
+  background: #c7c7c7;
+  border-radius: 5px;
+}
+
+.tableContainer::-webkit-scrollbar-track {
+  background: #f1f1f1;
 }
  
 .documentsTable {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  min-width: 760px;
  
   th {
     background: #f8f8f8;
@@ -155,17 +171,19 @@
 .table {
   border-top: 1px solid #dcdcdc;
   width: 100%;
+  min-width: 760px;
 }
 
 .headerRow {
   display: grid !important;
   grid-template-columns: 2.5fr 2fr 2fr 1.2fr 1.2fr 1.2fr !important;
-  padding: 7px 8px;
+  padding: 4px 6px;
   font-weight: 600;
   font-size: 12px;
   color: #2f2f2f;
   background: #f7f7f7;
   border-bottom: 1px solid #dcdcdc;
+  min-height: 30px;
 }
 
 .bodyRows {
@@ -178,7 +196,7 @@
   padding: 0px 8px;
   border-bottom: 1px solid #ececec;
   align-items: center;
-  min-height: 22px;
+  min-height: 26px;
   font-size: 12px;
 }
 
@@ -192,6 +210,42 @@
 
 .dataRow:hover {
   background: #ececec;
+}
+
+.headerCell {
+  background: transparent;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.headerCell:hover {
+  color: #1f6f2e;
+}
+
+.sortable::after {
+  content: '▾';
+  font-size: 10px;
+  color: #999;
+  opacity: 0.4;
+}
+
+.sortasc::after {
+  content: '▴';
+  color: #2f8a33;
+  opacity: 1;
+}
+
+.sortdesc::after {
+  content: '▾';
+  color: #2f8a33;
+  opacity: 1;
 }
 
 .link {

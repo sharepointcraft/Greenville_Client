@@ -1,0 +1,41 @@
+.container {
+  background: #f3f3f3;
+  padding: 18px;
+  border-radius: 4px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+}
+ 
+.entityButton {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #107c10; /* SharePoint green */
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 0;
+  cursor: pointer;
+  transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.entityButton:not(:last-child) {
+  margin-bottom: 6px;
+}
+
+.entityButton:hover,
+.entityButton:focus {
+  color: #0b5f0b;
+  text-decoration: underline;
+  outline: none;
+}
+ 
+.loading,
+.empty {
+  padding: 24px;
+  font-size: 14px;
+  color: #666;
+}
+ 
