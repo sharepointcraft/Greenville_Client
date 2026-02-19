@@ -4,7 +4,7 @@ import styles from './LeftPanel.module.scss';
 interface LeftPanelProps {
   webUrl: string;
   selectedClientId: number | null;
-  onSelect: (id: number, termGuid: string) => void;
+  onSelect: (id: number, termGuid: string, label: string) => void;
 }
 
 interface IClientUsage {
@@ -76,7 +76,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       setItems(finalItems);
 
       if (finalItems.length && selectedClientId === null) {
-        onSelect(finalItems[0].id, finalItems[0].termGuid);
+        const first = finalItems[0];
+        onSelect(first.id, first.termGuid, first.label);
       }
     } catch (err) {
       console.error('LeftPanel load error:', err);
@@ -141,7 +142,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             className={`${styles.clientItem} ${
               client.id === selectedClientId ? styles.active : ''
             }`}
-            onClick={() => onSelect(client.id, client.termGuid)}
+            onClick={() => onSelect(client.id, client.termGuid, client.label)}
           >
             {client.label}
           </button>

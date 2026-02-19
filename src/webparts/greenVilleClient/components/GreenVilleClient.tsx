@@ -8,6 +8,7 @@ import type { EntitySelection } from '../../../Components/Clients/RightPanelTabs
 interface IGreenVilleClientState {
   selectedClientId: number | null;
   selectedClientTermGuid: string | null;
+  selectedClientName: string | null;
   activeEntity: EntitySelection | null;
   viewMode: 'clients' | 'entity';
 }
@@ -23,15 +24,17 @@ export default class GreenVilleClient extends React.Component<
     this.state = {
       selectedClientId: null,
       selectedClientTermGuid: null,
+      selectedClientName: null,
       activeEntity: null,
       viewMode: 'clients'
     };
   }
 
-  private handleSelectClient = (id: number, termGuid: string): void => {
+  private handleSelectClient = (id: number, termGuid: string, name: string): void => {
     this.setState({
       selectedClientId: id,
       selectedClientTermGuid: termGuid,
+      selectedClientName: name,
       activeEntity: null,
       viewMode: 'clients'
     });
@@ -69,7 +72,13 @@ export default class GreenVilleClient extends React.Component<
 
   public render(): React.ReactElement<IGreenVilleClientProps> {
     const { webUrl } = this.props;
-    const { selectedClientId, selectedClientTermGuid, activeEntity, viewMode } = this.state;
+    const {
+      selectedClientId,
+      selectedClientTermGuid,
+      selectedClientName,
+      activeEntity,
+      viewMode
+    } = this.state;
 
     const showEntity = viewMode === 'entity';
 
@@ -103,6 +112,7 @@ export default class GreenVilleClient extends React.Component<
             webUrl={webUrl}
             selectedClientId={selectedClientId}
             selectedClientTermGuid={selectedClientTermGuid}
+            selectedClientName={selectedClientName}
             onSelectClient={this.handleSelectClient}
             onEntityOpen={this.handleOpenEntity}
           />
