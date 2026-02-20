@@ -3,10 +3,7 @@ import styles from './DocumentsTab.module.scss';
  
 const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
 const CLIENT_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
 const DOC_CENTER_URL = 'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter';
-const GUID_PATTERN = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
-const GUID_EXACT_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
  
 interface DocumentsTabProps {
   webUrl: string;
@@ -21,16 +18,6 @@ interface Document {
   modifiedDate: string;
   modifiedBy: string;
   absoluteUrl: string;
-}
-
-interface RawDocument extends Document {
-  relatedEntityValues: any[];
-}
-
-interface EntityTermInfo {
-  labelByGuid: Record<string, string>;
-  groupGuids: Set<string>;
-  groupLabels: Set<string>;
 }
 
 const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
@@ -50,276 +37,18 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     if (!value) return;
  
     if (typeof value === 'string') {
-      const matches = value.match(GUID_PATTERN);
-      (matches || []).forEach(guid => set.add(guid.toLowerCase()));
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach(v => collectTermGuids(v, set));
-      return;
-    }
-
-    if (typeof value === 'object') {
-      const guid = value.TermGuid || value.termGuid || value.id || value.Id;
-      if (guid && typeof guid === 'string') {
-        const matches = guid.match(GUID_PATTERN);
-        (matches || []).forEach(matchedGuid => set.add(matchedGuid.toLowerCase()));
-      }
-    }
-  };
-
-  const parseTaxonomyLabels = (value: any): string[] => {
-    if (!value) return [];
-
-    if (typeof value === 'string') {
-      const labelsFromPairs = value
+      value
         .split(';#')
         .filter(v => v.includes('|'))
-        .map(v => {
-          const parts = v.split('|');
-          return {
-            label: parts[0]?.trim() || '',
-            guid: (parts[1] || '').trim().toLowerCase()
-          };
-        })
-        .filter(pair => pair.guid !== ENTITY_TERM_SET_ID.toLowerCase())
-        .map(pair => pair.label)
-        .filter(label => Boolean(label) && !/^gp\d+$/i.test(String(label)));
-
-      if (labelsFromPairs.length) {
-        return labelsFromPairs as string[];
-      }
-
-      const compact = value.trim();
-      if (!compact || GUID_EXACT_PATTERN.test(compact)) {
-        return [];
-      }
-
-      if (compact.includes('|') || compact.includes(';#')) {
-        return [];
-      }
-
-      const guidTokens = compact
-        .split(/[;,\s]+/)
-        .map(token => token.trim())
-        .filter(Boolean);
-
-      if (guidTokens.length && guidTokens.every(token => GUID_EXACT_PATTERN.test(token))) {
-        return [];
-      }
-
-      return [compact];
+        .forEach(v => {
+          const guid = v.split('|')[1];
+          if (guid) set.add(guid);
+        });
+    } else if (Array.isArray(value)) {
+      value.forEach(v => collectTermGuids(v, set));
+    } else if (typeof value === 'object' && value.TermGuid) {
+      set.add(value.TermGuid);
     }
-
-    if (Array.isArray(value)) {
-      const labels: string[] = [];
-      value.forEach(v => {
-        labels.push(...parseTaxonomyLabels(v));
-      });
-      return labels;
-    }
-
-    if (typeof value === 'object') {
-      const label = value.Label || value.label || value.Title || value.title || value.name;
-      return label ? [String(label)] : [];
-    }
-
-    return [];
-  };
-
-  const uniqueStrings = (values: string[]): string[] => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-
-    values.forEach(value => {
-      const trimmed = String(value || '').trim();
-      if (!trimmed) return;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      result.push(trimmed);
-    });
-
-    return result;
-  };
-
-  const getCellValue = (cells: any[], key: string): string => {
-    const found = cells.find((cell: any) => String(cell.Key || '').toLowerCase() === key.toLowerCase());
-    return found?.Value || '';
-  };
-
-  const loadEntityTerms = async (guids: Set<string>): Promise<EntityTermInfo> => {
-    const empty: EntityTermInfo = {
-      labelByGuid: {},
-      groupGuids: new Set<string>(),
-      groupLabels: new Set<string>()
-    };
-
-    if (!guids.size) return empty;
-
-    const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`,
-      { headers: { Accept: 'application/json' } }
-    );
-
-    const data = await resp.json();
-    const labelByGuid: Record<string, string> = {};
-    const groupGuids = new Set<string>();
-    const groupLabels = new Set<string>();
-
-    (data.value || []).forEach((term: any) => {
-      const termId = String(term.id || '').toLowerCase();
-      if (!termId || !guids.has(termId)) return;
-
-      const label =
-        term.labels?.find((l: any) => l.isDefault)?.name ||
-        term.labels?.[0]?.name;
-
-      const hasChildren =
-        Number(term.childrenCount || 0) > 0 ||
-        (Array.isArray(term.children) && term.children.length > 0);
-
-      if (label) {
-        labelByGuid[termId] = label;
-        if (hasChildren) {
-          groupLabels.add(label.toLowerCase());
-        }
-      }
-
-      if (hasChildren) {
-        groupGuids.add(termId);
-      }
-    });
-
-    return {
-      labelByGuid,
-      groupGuids,
-      groupLabels
-    };
-  };
-
-  const hasEntityValue = (values: any[]): boolean => {
-    const guids = new Set<string>();
-    values.forEach(v => collectTermGuids(v, guids));
-    if (guids.size) return true;
-    return values.some(v => parseTaxonomyLabels(v).length > 0);
-  };
-
-  const buildEntityText = (values: any[], entityTermInfo: EntityTermInfo): string => {
-    const guids = new Set<string>();
-    values.forEach(v => collectTermGuids(v, guids));
-
-    const mappedLeafLabels = Array.from(guids)
-      .filter(guid => !entityTermInfo.groupGuids.has(guid))
-      .map(guid => entityTermInfo.labelByGuid[guid])
-      .filter(Boolean) as string[];
-
-    const fallbackLabels: string[] = [];
-    values.forEach(v => {
-      fallbackLabels.push(...parseTaxonomyLabels(v));
-    });
-
-    if (mappedLeafLabels.length) {
-      return uniqueStrings(mappedLeafLabels).join(', ');
-    }
-
-    const filteredFallback = fallbackLabels.filter(label => !entityTermInfo.groupLabels.has(label.toLowerCase()));
-    if (filteredFallback.length) {
-      return uniqueStrings(filteredFallback).join(', ');
-    }
-
-    return '';
-  };
-
-  const fetchDocumentRelatedEntity = async (absoluteUrl: string): Promise<any> => {
-    try {
-      const serverRelativePath = new URL(absoluteUrl).pathname;
-      const endpoints = [
-        `${DOC_CENTER_URL}/_api/web/GetFileByServerRelativePath(decodedurl='${serverRelativePath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`,
-        `${DOC_CENTER_URL}/_api/web/GetFileByServerRelativeUrl('${serverRelativePath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`
-      ];
-
-      for (const endpoint of endpoints) {
-        try {
-          const response = await fetch(endpoint, {
-            headers: { Accept: 'application/json;odata=nometadata' }
-          });
-
-          if (!response.ok) {
-            continue;
-          }
-
-          const data = await response.json();
-          const relatedEntity = data.RelatedEntity || data.ReletedEntity;
-          if (relatedEntity) {
-            return relatedEntity;
-          }
-        } catch (err) {
-          console.warn('RelatedEntity fallback request failed', err);
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to parse document URL for entity fallback', err);
-    }
-
-    return null;
-  };
-
-  const enrichDocumentsWithEntity = async (rawDocuments: RawDocument[]): Promise<Document[]> => {
-    const withFallbackValues = await Promise.all(
-      rawDocuments.map(async doc => {
-        if (hasEntityValue(doc.relatedEntityValues)) {
-          return doc;
-        }
-
-        const fallbackEntity = await fetchDocumentRelatedEntity(doc.absoluteUrl);
-        if (!fallbackEntity) {
-          return doc;
-        }
-
-        return {
-          ...doc,
-          relatedEntityValues: [...doc.relatedEntityValues, fallbackEntity]
-        };
-      })
-    );
-
-    const entityGuids = new Set<string>();
-    withFallbackValues.forEach(doc => {
-      doc.relatedEntityValues.forEach(value => collectTermGuids(value, entityGuids));
-    });
-
-    const entityTermInfo = await loadEntityTerms(entityGuids);
-
-    return withFallbackValues.map(doc => ({
-      name: doc.name,
-      activity: doc.activity,
-      entity: buildEntityText(doc.relatedEntityValues, entityTermInfo) || '-',
-      status: doc.status,
-      modifiedDate: doc.modifiedDate,
-      modifiedBy: doc.modifiedBy,
-      absoluteUrl: doc.absoluteUrl
-    }));
-  };
-
-  const dedupeDocuments = (docs: RawDocument[]): RawDocument[] => {
-    const byUrl = new Map<string, RawDocument>();
-
-    docs.forEach(doc => {
-      const existing = byUrl.get(doc.absoluteUrl);
-      if (!existing) {
-        byUrl.set(doc.absoluteUrl, doc);
-        return;
-      }
-
-      byUrl.set(doc.absoluteUrl, {
-        ...existing,
-        relatedEntityValues: [...existing.relatedEntityValues, ...doc.relatedEntityValues]
-      });
-    });
-
-    return Array.from(byUrl.values());
   };
  
   const loadClientTerms = async (guids: Set<string>) => {
@@ -332,12 +61,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
  
     const map: Record<string, string> = {};
     (data.value || []).forEach((term: any) => {
-      const termId = String(term.id || '').toLowerCase();
-      if (guids.has(termId)) {
+      if (guids.has(term.id)) {
         const label =
           term.labels?.find((l: any) => l.isDefault)?.name ||
           term.labels?.[0]?.name;
-        if (label) map[termId] = label;
+        if (label) map[term.id] = label;
       }
     });
  
@@ -345,7 +73,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
   };
  
   const searchDocumentsByRelatedClient = async (relatedClientGuids: Set<string>): Promise<Document[]> => {
-    const allDocuments: RawDocument[] = [];
+    const allDocuments: Document[] = [];
  
     try {
       console.log('Searching for documents with RelatedClient GUIDs:', Array.from(relatedClientGuids));
@@ -366,9 +94,9 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
        
         try {
           const searchResponse = await fetch(
-              `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity'`,
-              { headers: { Accept: 'application/json;odata=nometadata' } }
-            );
+            `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy'`,
+            { headers: { Accept: 'application/json;odata=nometadata' } }
+          );
  
           if (searchResponse.ok) {
             const searchData = await searchResponse.json();
@@ -378,16 +106,13 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
  
             results.forEach((row: any) => {
               const cells = row.Cells;
-              const title = getCellValue(cells, 'Title');
-              const path = getCellValue(cells, 'Path');
-              const lastModified = getCellValue(cells, 'LastModifiedTime');
-              const author = getCellValue(cells, 'Author');
-              const editor = getCellValue(cells, 'Editor');
-              const modifiedBy = getCellValue(cells, 'ModifiedBy');
-              const relatedEntity = getCellValue(cells, 'RelatedEntity');
-              const relatedEntityTaxId =
-                getCellValue(cells, 'RelatedEntityOWSTAXID') ||
-                getCellValue(cells, 'owstaxIdRelatedEntity');
+              const title = cells.find((cell: any) => cell.Key === 'Title')?.Value;
+              const path = cells.find((cell: any) => cell.Key === 'Path')?.Value;
+              const lastModified = cells.find((cell: any) => cell.Key === 'LastModifiedTime')?.Value;
+              const fileType = cells.find((cell: any) => cell.Key === 'FileType')?.Value;
+              const author = cells.find((cell: any) => cell.Key === 'Author')?.Value;
+              const editor = cells.find((cell: any) => cell.Key === 'Editor')?.Value;
+              const modifiedBy = cells.find((cell: any) => cell.Key === 'ModifiedBy')?.Value;
  
               // Extract user name from SharePoint user field format
               const extractUserName = (userField: any): string => {
@@ -413,12 +138,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
                 allDocuments.push({
                   name: title,
                   activity: libraryName,
-                  entity: '',
+                  entity: libraryName,
                   status: '',
                   modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
                   modifiedBy: finalModifiedBy,
-                  absoluteUrl: path,
-                  relatedEntityValues: [relatedEntity, relatedEntityTaxId].filter(Boolean)
+                  absoluteUrl: path
                 });
               }
             });
@@ -441,9 +165,9 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         // Try to get all documents from Prod-docCenter and filter client-side
         try {
           const allDocsResponse = await fetch(
-              `${webUrl}/_api/search/query?querytext='contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"'&rowlimit=1000&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,RelatedClientOWSTAXID,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity,Author,Editor,ModifiedBy'`,
-              { headers: { Accept: 'application/json;odata=nometadata' } }
-            );
+            `${webUrl}/_api/search/query?querytext='contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"'&rowlimit=1000&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,RelatedClientOWSTAXID,Author,Editor,ModifiedBy'`,
+            { headers: { Accept: 'application/json;odata=nometadata' } }
+          );
  
           if (allDocsResponse.ok) {
             const allDocsData = await allDocsResponse.json();
@@ -453,17 +177,13 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
  
             allResults.forEach((row: any) => {
               const cells = row.Cells;
-              const title = getCellValue(cells, 'Title');
-              const path = getCellValue(cells, 'Path');
-              const lastModified = getCellValue(cells, 'LastModifiedTime');
-              const relatedClientTaxId = getCellValue(cells, 'RelatedClientOWSTAXID');
-              const relatedEntity = getCellValue(cells, 'RelatedEntity');
-              const relatedEntityTaxId =
-                getCellValue(cells, 'RelatedEntityOWSTAXID') ||
-                getCellValue(cells, 'owstaxIdRelatedEntity');
-              const author = getCellValue(cells, 'Author');
-              const editor = getCellValue(cells, 'Editor');
-              const modifiedBy = getCellValue(cells, 'ModifiedBy');
+              const title = cells.find((cell: any) => cell.Key === 'Title')?.Value;
+              const path = cells.find((cell: any) => cell.Key === 'Path')?.Value;
+              const lastModified = cells.find((cell: any) => cell.Key === 'LastModifiedTime')?.Value;
+              const relatedClientTaxId = cells.find((cell: any) => cell.Key === 'RelatedClientOWSTAXID')?.Value;
+              const author = cells.find((cell: any) => cell.Key === 'Author')?.Value;
+              const editor = cells.find((cell: any) => cell.Key === 'Editor')?.Value;
+              const modifiedBy = cells.find((cell: any) => cell.Key === 'ModifiedBy')?.Value;
  
               // Extract user name from SharePoint user field format
               const extractUserName = (userField: any): string => {
@@ -481,26 +201,26 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
               };
  
               const finalModifiedBy = extractUserName(modifiedBy || editor || author);
-
+ 
               // Check if this document has any of our target RelatedClient GUIDs
               if (title && path && relatedClientTaxId) {
-                const documentGuids = new Set<string>();
-                collectTermGuids(relatedClientTaxId, documentGuids);
-                const hasMatch = Array.from(documentGuids).some(docGuid => relatedClientGuids.has(docGuid));
-
+                const documentGuids = relatedClientTaxId.split(';').filter((g: string) => g.trim());
+                const hasMatch = documentGuids.some((docGuid: string) =>
+                  relatedClientGuids.has(docGuid.trim())
+                );
+ 
                 if (hasMatch) {
                   const pathParts = path.split('/');
                   const libraryName = pathParts[pathParts.length - 2] || 'Unknown';
-
+ 
                   allDocuments.push({
                     name: title,
                     activity: libraryName,
-                    entity: '',
+                    entity: libraryName,
                     status: '',
                     modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
                     modifiedBy: finalModifiedBy,
-                    absoluteUrl: path,
-                    relatedEntityValues: [relatedEntity, relatedEntityTaxId].filter(Boolean)
+                    absoluteUrl: path
                   });
                 }
               }
@@ -515,10 +235,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
       console.error('Error searching documents:', error);
     }
  
-    const dedupedDocuments = dedupeDocuments(allDocuments);
-    const documentsWithEntity = await enrichDocumentsWithEntity(dedupedDocuments);
-    console.log('Final documents found:', documentsWithEntity);
-    return documentsWithEntity;
+    console.log('Final documents found:', allDocuments);
+    return allDocuments;
   };
 
   const loadDocuments = async () => {
