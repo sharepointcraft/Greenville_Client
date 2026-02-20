@@ -1,11 +1,11 @@
 import * as React from 'react';
 import styles from '../../Clients/RightPanelTabs/SummaryTab.module.scss';
 import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const CLIENT_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
-const BANK_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
+import {
+  TENANT_CONFIG,
+  buildListItemsApiUrl,
+  buildTermSetTermsApiUrl
+} from '../../../config/tenantConfig';
 
 interface EntitySummaryTabProps {
   webUrl: string;
@@ -126,7 +126,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
       return;
     }
     const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${setId}')/terms`,
+      buildTermSetTermsApiUrl(webUrl, setId),
       { headers: { Accept: 'application/json' } }
     );
     const data = await resp.json();
@@ -164,7 +164,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
       };
 
       const data = await fetchJson(
-        `${webUrl}/_api/web/lists/getByTitle('Entities')/items(${entity.id})?$select=*,Members/Title,Manager/Title,Setter/Title,Beneficiary/Title,Trustee/Title&$expand=Members,Manager,Setter,Beneficiary,Trustee`
+        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.entities.title)}(${entity.id})?$select=${TENANT_CONFIG.lists.entities.queries.summarySelect}&$expand=${TENANT_CONFIG.lists.entities.queries.summaryExpand}`
       );
 
       const clientGuids = new Set<string>();
@@ -177,9 +177,9 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
 
       // 2. Await all the text labels from the Term Store BEFORE continuing
       await Promise.all([
-        loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms),
-        loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms),
-        loadTermSet(bankGuids, BANK_TERM_SET_ID, setBankTerms) 
+        loadTermSet(clientGuids, TENANT_CONFIG.termStore.sets.clients, setClientTerms),
+        loadTermSet(entityGuids, TENANT_CONFIG.termStore.sets.entities, setEntityTerms),
+        loadTermSet(bankGuids, TENANT_CONFIG.termStore.sets.banks, setBankTerms) 
       ]);
 
       // 3. Render the data! No more flashing IDs.

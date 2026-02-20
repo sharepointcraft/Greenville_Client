@@ -1,11 +1,7 @@
 import * as React from 'react';
 import styles from '../../Clients/RightPanelTabs/DocumentsTab.module.scss';
 import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
-const GUID_PATTERN = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
-const GUID_EXACT_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+import { TENANT_CONFIG, buildTermSetTermsApiUrl } from '../../../config/tenantConfig';
 
 interface EntityDocumentsTabProps {
   webUrl: string;
@@ -42,27 +38,18 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     direction: 'asc'
   });
   const subTabs = React.useMemo(
-    () => [
-      'All Documents',
-      'Account Administration',
-      'Letters of Direction (LOD)',
-      'Trusts and Amendments',
-      'Formation Documents',
-      'Executed Legal Documents',
-      'Correspondence',
-      'Contracts',
-      'Confidentiality Agreements',
-      'Annual Meetings and Resolutions'
-    ],
+    () => TENANT_CONFIG.libraries.entityActivityFilters,
     []
   );
-  const [activeActivity, setActiveActivity] = React.useState<string>('All Documents');
+  const [activeActivity, setActiveActivity] = React.useState<string>(
+    TENANT_CONFIG.libraries.entityActivityFilters[0]
+  );
 
   const collectTermGuids = (value: any, set: Set<string>) => {
     if (!value) return;
 
     if (typeof value === 'string') {
-      const matches = value.match(GUID_PATTERN);
+      const matches = value.match(TENANT_CONFIG.patterns.guid);
       (matches || []).forEach(guid => set.add(guid.toLowerCase()));
       return;
     }
@@ -75,7 +62,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     if (typeof value === 'object') {
       const guid = value.TermGuid || value.termGuid || value.id || value.Id;
       if (guid && typeof guid === 'string') {
-        const matches = guid.match(GUID_PATTERN);
+        const matches = guid.match(TENANT_CONFIG.patterns.guid);
         (matches || []).forEach(matchedGuid => set.add(matchedGuid.toLowerCase()));
       }
     }
@@ -95,7 +82,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
             guid: (parts[1] || '').trim().toLowerCase()
           };
         })
-        .filter(pair => pair.guid !== ENTITY_TERM_SET_ID.toLowerCase())
+        .filter(pair => pair.guid !== TENANT_CONFIG.termStore.sets.entities.toLowerCase())
         .map(pair => pair.label)
         .filter(label => Boolean(label) && !/^gp\d+$/i.test(String(label)));
 
@@ -104,7 +91,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
       }
 
       const compact = value.trim();
-      if (!compact || GUID_EXACT_PATTERN.test(compact)) {
+      if (!compact || TENANT_CONFIG.patterns.guidExact.test(compact)) {
         return [];
       }
 
@@ -117,7 +104,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
         .map(token => token.trim())
         .filter(Boolean);
 
-      if (guidTokens.length && guidTokens.every(token => GUID_EXACT_PATTERN.test(token))) {
+      if (guidTokens.length && guidTokens.every(token => TENANT_CONFIG.patterns.guidExact.test(token))) {
         return [];
       }
 
@@ -181,7 +168,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     if (!guids.size) return empty;
 
     const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`,
+      buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities),
       { headers: { Accept: 'application/json' } }
     );
 
@@ -344,19 +331,23 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
 
   const searchDocumentsByRelatedEntity = async (entityGuid: string): Promise<Document[]> => {
     const results: RawDocument[] = [];
+    const documentClass = TENANT_CONFIG.search.contentClassDocumentLibrary;
+    const relatedEntityTaxId = TENANT_CONFIG.search.managedProperties.relatedEntityTaxId;
+    const relatedEntity = TENANT_CONFIG.search.managedProperties.relatedEntity;
+    const relatedEntityTaxIdFallback = TENANT_CONFIG.search.managedProperties.relatedEntityTaxIdFallback;
 
     const queries = [
       // Managed metadata managed property (most accurate)
-      `RelatedEntityOWSTAXID:("${entityGuid}") AND contentclass:STS_ListItem_DocumentLibrary`,
+      `${relatedEntityTaxId}:("${entityGuid}") AND contentclass:${documentClass}`,
       // Sometimes crawled property surfaces as RelatedEntity
-      `RelatedEntity:("${entityGuid}") AND contentclass:STS_ListItem_DocumentLibrary`,
+      `${relatedEntity}:("${entityGuid}") AND contentclass:${documentClass}`,
       // Fallback plain text
-      `"${entityGuid}" AND contentclass:STS_ListItem_DocumentLibrary`
+      `"${entityGuid}" AND contentclass:${documentClass}`
     ];
 
     for (const query of queries) {
       const resp = await fetch(
-        `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity'`,
+        `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=${TENANT_CONFIG.search.rowLimitDefault}&selectproperties='${TENANT_CONFIG.search.selectProperties.documents}'`,
         { headers: { Accept: 'application/json;odata=nometadata' } }
       );
 
@@ -375,10 +366,10 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
         const editor = getCellValue(cells, 'Editor');
         const author = getCellValue(cells, 'Author');
         const modifiedBy = getCellValue(cells, 'ModifiedBy');
-        const relatedEntity = getCellValue(cells, 'RelatedEntity');
-        const relatedEntityTaxId =
-          getCellValue(cells, 'RelatedEntityOWSTAXID') ||
-          getCellValue(cells, 'owstaxIdRelatedEntity');
+        const relatedEntityValue = getCellValue(cells, relatedEntity);
+        const relatedEntityTaxIdValue =
+          getCellValue(cells, relatedEntityTaxId) ||
+          getCellValue(cells, relatedEntityTaxIdFallback);
 
         if (title && path) {
           const pathParts = path.split('/');
@@ -392,7 +383,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
             modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
             modifiedBy: extractUserName(modifiedBy || editor || author),
             absoluteUrl: path,
-            relatedEntityValues: [relatedEntity, relatedEntityTaxId].filter(Boolean)
+            relatedEntityValues: [relatedEntityValue, relatedEntityTaxIdValue].filter(Boolean)
           });
         }
       });
@@ -417,7 +408,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
 
       const docs = await searchDocumentsByRelatedEntity(entity.termGuid);
       setDocuments(docs);
-      setActiveActivity('All Documents');
+      setActiveActivity(TENANT_CONFIG.libraries.entityActivityFilters[0]);
     } catch (err) {
       console.error('Entity documents load error', err);
       setError('Failed to load documents');
@@ -433,7 +424,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
 
   const filteredDocuments = documents.filter(doc => {
     const matchesActivity =
-      activeActivity === 'All Documents' || doc.activity === activeActivity;
+      activeActivity === TENANT_CONFIG.libraries.entityActivityFilters[0] || doc.activity === activeActivity;
 
     if (!searchQuery) return matchesActivity;
 

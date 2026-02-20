@@ -1,8 +1,10 @@
 import * as React from 'react';
 import styles from './EntitiesTab.module.scss';
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
+import {
+  TENANT_CONFIG,
+  buildListItemsApiUrl,
+  buildTermSetTermsApiUrl
+} from '../../../config/tenantConfig';
 
 export interface EntitySelection {
   id?: number;
@@ -67,8 +69,8 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
 
       /* 1️⃣ Load all entities */
       const data = await fetchJson(
-        `${webUrl}/_api/web/lists/getByTitle('Entities')/items?` +
-          `$select=Id,Entity,RelatedClient&$top=5000`
+        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.entities.title)}?` +
+          `$select=${TENANT_CONFIG.lists.entities.queries.listSelect}&$top=${TENANT_CONFIG.queryLimits.listTop}`
       );
 
       const matchedEntities: any[] = [];
@@ -104,7 +106,7 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
 
       /* 4️⃣ Resolve Entity names */
       const termData = await fetchJson(
-        `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`
+        buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities)
       );
 
       const labelMap = new Map<string, string>();

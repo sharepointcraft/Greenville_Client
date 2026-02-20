@@ -7,13 +7,14 @@ import type { EntitySelection } from '../Clients/RightPanelTabs/EntitiesTab';
 import EntitySummaryTab from './Tabs/EntitySummaryTab';
 import EntityDocumentsTab from './Tabs/EntityDocumentsTab';
 import EntityTasksTab from './Tabs/EntityTasksTab';
+import {
+  TENANT_CONFIG,
+  buildListItemsApiUrl,
+  buildTermSetTermsApiUrl,
+  type EntityPanelTab
+} from '../../config/tenantConfig';
 
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
-const ENTITIES_NEW_FORM_URL =
-  'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B5B64CCEF-5176-4D1E-AFD2-BF67366BEA81%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FEntities&Source=https%3A%2F%2Frealitycraftprivatelimited.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FEntities%2FAllItems.aspx&ContentTypeId=0x010005A065D7CC77D146A540E9E94E26F332009595D5DD684D9F47BDF0DE601379CD13';
-
-type EntityTabKey = 'Summary' | 'Documents' | 'Tasks';
+type EntityTabKey = EntityPanelTab;
 
 interface EntityViewProps {
   webUrl: string;
@@ -50,7 +51,9 @@ const EntityView: React.FC<EntityViewProps> = ({
   initialEntity,
   onEntityChange
 }) => {
-  const [activeTab, setActiveTab] = React.useState<EntityTabKey>('Summary');
+  const [activeTab, setActiveTab] = React.useState<EntityTabKey>(
+    TENANT_CONFIG.ui.tabs.entityPanel[0]
+  );
   const [selectedEntity, setSelectedEntity] = React.useState<EntitySelection | null>(initialEntity);
   const [entities, setEntities] = React.useState<EntitySelection[]>([]);
   const [loadingEntities, setLoadingEntities] = React.useState(true);
@@ -84,8 +87,8 @@ const EntityView: React.FC<EntityViewProps> = ({
       };
 
       const data = await fetchJson(
-        `${webUrl}/_api/web/lists/getByTitle('Entities')/items?` +
-          `$select=Id,Entity,RelatedClient&$top=5000`
+        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.entities.title)}?` +
+          `$select=${TENANT_CONFIG.lists.entities.queries.listSelect}&$top=${TENANT_CONFIG.queryLimits.listTop}`
       );
 
       const matched = data.value || [];
@@ -113,7 +116,7 @@ const EntityView: React.FC<EntityViewProps> = ({
       });
 
       const termData = await fetchJson(
-        `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`
+        buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities)
       );
 
       const labelMap = new Map<string, string>();
@@ -188,7 +191,7 @@ const EntityView: React.FC<EntityViewProps> = ({
     try {
       setFormError(null);
       setFormLoading(true);
-      const absoluteUrl = ENTITIES_NEW_FORM_URL;
+      const absoluteUrl = TENANT_CONFIG.lists.entities.newItemFormUrl;
       setNewFormUrl(absoluteUrl);
       return absoluteUrl;
     } catch (err) {
@@ -315,7 +318,7 @@ const EntityView: React.FC<EntityViewProps> = ({
               </div>
             )}
             <div className={rightPanelStyles.tabs}>
-              {(['Summary', 'Documents', 'Tasks'] as EntityTabKey[]).map(tab => (
+              {TENANT_CONFIG.ui.tabs.entityPanel.map(tab => (
                 <button
                   key={tab}
                   type="button"

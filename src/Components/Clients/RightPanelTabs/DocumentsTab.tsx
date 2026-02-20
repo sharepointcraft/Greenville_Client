@@ -1,12 +1,10 @@
 import * as React from 'react';
 import styles from './DocumentsTab.module.scss';
- 
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const CLIENT_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
-const DOC_CENTER_URL = 'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter';
-const GUID_PATTERN = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
-const GUID_EXACT_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+import {
+  TENANT_CONFIG,
+  buildListItemsApiUrl,
+  buildTermSetTermsApiUrl
+} from '../../../config/tenantConfig';
  
 interface DocumentsTabProps {
   webUrl: string;
@@ -39,8 +37,9 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
   const [error, setError] = React.useState<string | null>(null);
   const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [activeFilter, setActiveFilter] = React.useState('All Documents');
-  const [activeSubTab, setActiveSubTab] = React.useState('All Documents');
+  const [activeSubTab, setActiveSubTab] = React.useState<string>(
+    TENANT_CONFIG.ui.documents.clientStatusFilters[0]
+  );
   const [sortConfig, setSortConfig] = React.useState<{ key: keyof Document; direction: 'asc' | 'desc' }>({
     key: 'name',
     direction: 'asc'
@@ -50,7 +49,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     if (!value) return;
  
     if (typeof value === 'string') {
-      const matches = value.match(GUID_PATTERN);
+      const matches = value.match(TENANT_CONFIG.patterns.guid);
       (matches || []).forEach(guid => set.add(guid.toLowerCase()));
       return;
     }
@@ -63,7 +62,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     if (typeof value === 'object') {
       const guid = value.TermGuid || value.termGuid || value.id || value.Id;
       if (guid && typeof guid === 'string') {
-        const matches = guid.match(GUID_PATTERN);
+        const matches = guid.match(TENANT_CONFIG.patterns.guid);
         (matches || []).forEach(matchedGuid => set.add(matchedGuid.toLowerCase()));
       }
     }
@@ -83,7 +82,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
             guid: (parts[1] || '').trim().toLowerCase()
           };
         })
-        .filter(pair => pair.guid !== ENTITY_TERM_SET_ID.toLowerCase())
+        .filter(pair => pair.guid !== TENANT_CONFIG.termStore.sets.entities.toLowerCase())
         .map(pair => pair.label)
         .filter(label => Boolean(label) && !/^gp\d+$/i.test(String(label)));
 
@@ -92,7 +91,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
       }
 
       const compact = value.trim();
-      if (!compact || GUID_EXACT_PATTERN.test(compact)) {
+      if (!compact || TENANT_CONFIG.patterns.guidExact.test(compact)) {
         return [];
       }
 
@@ -105,7 +104,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         .map(token => token.trim())
         .filter(Boolean);
 
-      if (guidTokens.length && guidTokens.every(token => GUID_EXACT_PATTERN.test(token))) {
+      if (guidTokens.length && guidTokens.every(token => TENANT_CONFIG.patterns.guidExact.test(token))) {
         return [];
       }
 
@@ -159,7 +158,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     if (!guids.size) return empty;
 
     const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`,
+      buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities),
       { headers: { Accept: 'application/json' } }
     );
 
@@ -236,8 +235,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     try {
       const serverRelativePath = new URL(absoluteUrl).pathname;
       const endpoints = [
-        `${DOC_CENTER_URL}/_api/web/GetFileByServerRelativePath(decodedurl='${serverRelativePath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`,
-        `${DOC_CENTER_URL}/_api/web/GetFileByServerRelativeUrl('${serverRelativePath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`
+        `${TENANT_CONFIG.sites.docCenter}/_api/web/GetFileByServerRelativePath(decodedurl='${serverRelativePath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`,
+        `${TENANT_CONFIG.sites.docCenter}/_api/web/GetFileByServerRelativeUrl('${serverRelativePath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`
       ];
 
       for (const endpoint of endpoints) {
@@ -324,7 +323,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
  
   const loadClientTerms = async (guids: Set<string>) => {
     const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${CLIENT_TERM_SET_ID}')/terms`,
+      buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.clients),
       { headers: { Accept: 'application/json' } }
     );
  
@@ -349,6 +348,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
  
     try {
       console.log('Searching for documents with RelatedClient GUIDs:', Array.from(relatedClientGuids));
+      const documentPath = TENANT_CONFIG.libraries.documentCenterPath;
+      const documentClass = TENANT_CONFIG.search.contentClassDocumentLibrary;
+      const relatedClientTaxId = TENANT_CONFIG.search.managedProperties.relatedClientTaxId;
+      const relatedClient = TENANT_CONFIG.search.managedProperties.relatedClient;
  
       // Method 1: Try using the SharePoint search with proper managed metadata syntax
       // For managed metadata fields, we need to use the GUID format
@@ -356,9 +359,9 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
      
       // Try different managed property names that SharePoint might use for RelatedClient
       const searchQueries = [
-        `RelatedClientOWSTAXID:(${guidQueries}) AND contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"`,
-        `RelatedClient:(${guidQueries}) AND contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"`,
-        `"${Array.from(relatedClientGuids).join('" OR "')}" AND contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"`
+        `${relatedClientTaxId}:(${guidQueries}) AND contentclass:${documentClass} AND path:"${documentPath}"`,
+        `${relatedClient}:(${guidQueries}) AND contentclass:${documentClass} AND path:"${documentPath}"`,
+        `"${Array.from(relatedClientGuids).join('" OR "')}" AND contentclass:${documentClass} AND path:"${documentPath}"`
       ];
  
       for (const query of searchQueries) {
@@ -366,7 +369,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
        
         try {
           const searchResponse = await fetch(
-              `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity'`,
+              `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=${TENANT_CONFIG.search.rowLimitDefault}&selectproperties='${TENANT_CONFIG.search.selectProperties.documents}'`,
               { headers: { Accept: 'application/json;odata=nometadata' } }
             );
  
@@ -384,10 +387,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
               const author = getCellValue(cells, 'Author');
               const editor = getCellValue(cells, 'Editor');
               const modifiedBy = getCellValue(cells, 'ModifiedBy');
-              const relatedEntity = getCellValue(cells, 'RelatedEntity');
+              const relatedEntity = getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntity);
               const relatedEntityTaxId =
-                getCellValue(cells, 'RelatedEntityOWSTAXID') ||
-                getCellValue(cells, 'owstaxIdRelatedEntity');
+                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxId) ||
+                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxIdFallback);
  
               // Extract user name from SharePoint user field format
               const extractUserName = (userField: any): string => {
@@ -441,7 +444,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         // Try to get all documents from Prod-docCenter and filter client-side
         try {
           const allDocsResponse = await fetch(
-              `${webUrl}/_api/search/query?querytext='contentclass:STS_ListItem_DocumentLibrary AND path:"https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter/*"'&rowlimit=1000&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,RelatedClientOWSTAXID,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity,Author,Editor,ModifiedBy'`,
+              `${webUrl}/_api/search/query?querytext='contentclass:${documentClass} AND path:"${documentPath}"'&rowlimit=${TENANT_CONFIG.search.rowLimitExpanded}&selectproperties='${TENANT_CONFIG.search.selectProperties.documentsWithRelatedClient}'`,
               { headers: { Accept: 'application/json;odata=nometadata' } }
             );
  
@@ -456,11 +459,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
               const title = getCellValue(cells, 'Title');
               const path = getCellValue(cells, 'Path');
               const lastModified = getCellValue(cells, 'LastModifiedTime');
-              const relatedClientTaxId = getCellValue(cells, 'RelatedClientOWSTAXID');
-              const relatedEntity = getCellValue(cells, 'RelatedEntity');
+              const relatedClientTaxId = getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedClientTaxId);
+              const relatedEntity = getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntity);
               const relatedEntityTaxId =
-                getCellValue(cells, 'RelatedEntityOWSTAXID') ||
-                getCellValue(cells, 'owstaxIdRelatedEntity');
+                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxId) ||
+                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxIdFallback);
               const author = getCellValue(cells, 'Author');
               const editor = getCellValue(cells, 'Editor');
               const modifiedBy = getCellValue(cells, 'ModifiedBy');
@@ -530,7 +533,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
       // Step 1: Get the client item with RelatedClient field
       const clientResponse = await fetch(
-        `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?$select=RelatedClient`,
+        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.clients.title)}(${clientId})?$select=${TENANT_CONFIG.lists.clients.queries.relatedClientSelect}`,
         { headers: { Accept: 'application/json;odata=nometadata' } }
       );
 
@@ -587,7 +590,7 @@ const getStatusClass = (status: string): string => {
   return statusMap[status.toLowerCase()] || '';
 };
 
-const subTabs = ['All Documents', 'Draft', 'Approval', 'Signature', 'Hold', 'Final', 'Identification'];
+const subTabs = TENANT_CONFIG.ui.documents.clientStatusFilters;
 
 const filteredDocuments = documents.filter(doc => {
   const matchesSearch = searchQuery === '' ||
@@ -596,7 +599,7 @@ const filteredDocuments = documents.filter(doc => {
     doc.entity.toLowerCase().includes(searchQuery.toLowerCase()) ||
     doc.modifiedBy.toLowerCase().includes(searchQuery.toLowerCase());
 
-  const matchesSubTab = activeSubTab === 'All Documents' || 
+  const matchesSubTab = activeSubTab === TENANT_CONFIG.ui.documents.clientStatusFilters[0] || 
     (activeSubTab === 'Draft' && doc.status.toLowerCase() === 'draft') ||
     (activeSubTab === 'Approval' && doc.status.toLowerCase() === 'approval') ||
     (activeSubTab === 'Signature' && doc.status.toLowerCase() === 'signature') ||

@@ -1,18 +1,17 @@
 import * as React from 'react';
 import styles from '../../Clients/RightPanelTabs/TasksTab.module.scss';
 import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
-const ENTITY_TASK_NEW_FORM_URL =
-  'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B6CD2A192-B82C-4304-A936-F400D0E66FEC%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FTasks&Source=https%3A%2F%2Frealitycraftprivatelimited.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FTasks%2FAllItems.aspx&ContentTypeId=0x0100A2DB78381F4D3541900EBE1DE131DD3E0064E6958DA895BF44AC2862F2A62CFE11';
+import {
+  TENANT_CONFIG,
+  buildListItemsApiUrl,
+  buildTermSetTermsApiUrl,
+  type PriorityFilter
+} from '../../../config/tenantConfig';
 
 interface EntityTasksTabProps {
   webUrl: string;
   entity: EntitySelection | null;
 }
-
-type PriorityFilter = 'ALL' | 'HIGH' | 'NORMAL' | 'LOW' | 'ON HOLD';
 
 const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
   const [tasks, setTasks] = React.useState<any[]>([]);
@@ -20,7 +19,9 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
   const [error, setError] = React.useState<string | null>(null);
   const [entityTerms, setEntityTerms] = React.useState<Record<string, string>>({});
   const [searchText, setSearchText] = React.useState('');
-  const [priorityFilter, setPriorityFilter] = React.useState<PriorityFilter>('ALL');
+  const [priorityFilter, setPriorityFilter] = React.useState<PriorityFilter>(
+    TENANT_CONFIG.ui.tasks.priorityFilters[0]
+  );
   const [showAddPopup, setShowAddPopup] = React.useState(false);
   const [sortConfig, setSortConfig] = React.useState<{ key: 'Title' | 'Entity' | 'AssignedTo' | 'DueDate1' | 'Priority' | 'Status'; direction: 'asc' | 'desc' }>({
     key: 'Title',
@@ -157,7 +158,7 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
     }
 
     const termData = await fetchJson(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`
+      buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities)
     );
 
     const map: Record<string, string> = {};
@@ -202,10 +203,10 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
       };
 
       const taskData = await fetchJson(
-        `${webUrl}/_api/web/lists/getByTitle('Tasks')/items?` +
-          `$select=Id,Title,Status,Priority,DueDate1,RelatedClient,RelatedEntity,AssignedTo1/Title,AssignedTo1/EMail&` +
-          `$expand=AssignedTo1&` +
-          `$top=5000`,
+        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.tasks.title)}?` +
+          `$select=${TENANT_CONFIG.lists.tasks.queries.listSelect}&` +
+          `$expand=${TENANT_CONFIG.lists.tasks.queries.listExpand}&` +
+          `$top=${TENANT_CONFIG.queryLimits.listTop}`,
       );
       const allTasks = taskData.value || [];
 
@@ -360,7 +361,7 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
           className={styles.clearBtn}
           onClick={() => {
             setSearchText('');
-            setPriorityFilter('ALL');
+            setPriorityFilter(TENANT_CONFIG.ui.tasks.priorityFilters[0]);
           }}
         >
           Clear Search
@@ -372,41 +373,16 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
       </div>
 
       <div className={styles.filters}>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${priorityFilter === 'ALL' ? styles.active : ''}`}
-          onClick={() => setPriorityFilter('ALL')}
-        >
-          All Tasks
-        </button>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${priorityFilter === 'HIGH' ? styles.active : ''}`}
-          onClick={() => setPriorityFilter('HIGH')}
-        >
-          High
-        </button>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${priorityFilter === 'NORMAL' ? styles.active : ''}`}
-          onClick={() => setPriorityFilter('NORMAL')}
-        >
-          Normal
-        </button>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${priorityFilter === 'LOW' ? styles.active : ''}`}
-          onClick={() => setPriorityFilter('LOW')}
-        >
-          Low
-        </button>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${priorityFilter === 'ON HOLD' ? styles.active : ''}`}
-          onClick={() => setPriorityFilter('ON HOLD')}
-        >
-          On Hold
-        </button>
+        {TENANT_CONFIG.ui.tasks.priorityFilterButtons.map(filter => (
+          <button
+            key={filter.value}
+            type="button"
+            className={`${styles.filterBtn} ${priorityFilter === filter.value ? styles.active : ''}`}
+            onClick={() => setPriorityFilter(filter.value)}
+          >
+            {filter.label}
+          </button>
+        ))}
       </div>
 
       <div className={styles.tableContainer}>
@@ -503,7 +479,7 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
             </div>
             <iframe 
               title="Add New Task" 
-              src={ENTITY_TASK_NEW_FORM_URL} 
+              src={TENANT_CONFIG.lists.tasks.newItemFormUrl} 
               className={styles.popupFrame}
               onLoad={handleIframeLoad} // NEW: Added onLoad listener here
             />

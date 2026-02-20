@@ -1,5 +1,10 @@
 import * as React from 'react';
 import styles from './LeftPanel.module.scss';
+import {
+  TENANT_CONFIG,
+  buildListItemsApiUrl,
+  buildTermSetTermsApiUrl
+} from '../../config/tenantConfig';
 
 interface LeftPanelProps {
   webUrl: string;
@@ -11,11 +16,6 @@ interface IClientUsage {
   itemId: number;
   termGuid: string;
 }
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
-const ADD_NEW_CLIENT_URL =
-  'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7BD055FA58-F79D-496A-A914-35E21B3675A9%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FClients&Source=https%3A%2F%2Frealitycraftprivatelimited.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FClients%2FAllItems.aspx&ContentTypeId=0x0100C441AE8AC3A035499BD4A40EF481581600FD2764DABCAC504483BC664D29A7796D';
 
 const LeftPanel: React.FC<LeftPanelProps> = ({
   webUrl,
@@ -30,7 +30,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   const loadClientsFromTerms = async () => {
     try {
       const listResp = await fetch(
-        `${webUrl}/_api/web/lists/getByTitle('Clients')/items?$select=Id,Client`,
+        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.clients.title)}?$select=${TENANT_CONFIG.lists.clients.queries.leftPanelSelect}`,
         { headers: { Accept: 'application/json;odata=nometadata' } }
       );
 
@@ -53,7 +53,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       }
 
       const termResp = await fetch(
-        `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${TERM_SET_ID}')/terms`,
+        buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.clients),
         { headers: { Accept: 'application/json' } }
       );
 
@@ -168,7 +168,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             </div>
             <iframe
               title="Add New Client"
-              src={ADD_NEW_CLIENT_URL}
+              src={TENANT_CONFIG.lists.clients.newItemFormUrl}
               className={styles.popupFrame}
               onLoad={handleIframeLoad} 
             />
