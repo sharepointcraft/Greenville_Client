@@ -2,6 +2,11 @@ import * as React from 'react';
 import styles from '../../Clients/RightPanelTabs/DocumentsTab.module.scss';
 import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
 
+const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
+const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
+const GUID_PATTERN = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
+const GUID_EXACT_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 interface EntityDocumentsTabProps {
   webUrl: string;
   entity: EntitySelection | null;
@@ -15,6 +20,16 @@ interface Document {
   modifiedDate: string;
   modifiedBy: string;
   absoluteUrl: string;
+}
+
+interface RawDocument extends Document {
+  relatedEntityValues: any[];
+}
+
+interface EntityTermInfo {
+  labelByGuid: Record<string, string>;
+  groupGuids: Set<string>;
+  groupLabels: Set<string>;
 }
 
 const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity }) => {
@@ -43,8 +58,292 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
   );
   const [activeActivity, setActiveActivity] = React.useState<string>('All Documents');
 
+  const collectTermGuids = (value: any, set: Set<string>) => {
+    if (!value) return;
+
+    if (typeof value === 'string') {
+      const matches = value.match(GUID_PATTERN);
+      (matches || []).forEach(guid => set.add(guid.toLowerCase()));
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(v => collectTermGuids(v, set));
+      return;
+    }
+
+    if (typeof value === 'object') {
+      const guid = value.TermGuid || value.termGuid || value.id || value.Id;
+      if (guid && typeof guid === 'string') {
+        const matches = guid.match(GUID_PATTERN);
+        (matches || []).forEach(matchedGuid => set.add(matchedGuid.toLowerCase()));
+      }
+    }
+  };
+
+  const parseTaxonomyLabels = (value: any): string[] => {
+    if (!value) return [];
+
+    if (typeof value === 'string') {
+      const labelsFromPairs = value
+        .split(';#')
+        .filter(v => v.includes('|'))
+        .map(v => {
+          const parts = v.split('|');
+          return {
+            label: parts[0]?.trim() || '',
+            guid: (parts[1] || '').trim().toLowerCase()
+          };
+        })
+        .filter(pair => pair.guid !== ENTITY_TERM_SET_ID.toLowerCase())
+        .map(pair => pair.label)
+        .filter(label => Boolean(label) && !/^gp\d+$/i.test(String(label)));
+
+      if (labelsFromPairs.length) {
+        return labelsFromPairs as string[];
+      }
+
+      const compact = value.trim();
+      if (!compact || GUID_EXACT_PATTERN.test(compact)) {
+        return [];
+      }
+
+      if (compact.includes('|') || compact.includes(';#')) {
+        return [];
+      }
+
+      const guidTokens = compact
+        .split(/[;,\s]+/)
+        .map(token => token.trim())
+        .filter(Boolean);
+
+      if (guidTokens.length && guidTokens.every(token => GUID_EXACT_PATTERN.test(token))) {
+        return [];
+      }
+
+      return [compact];
+    }
+
+    if (Array.isArray(value)) {
+      const labels: string[] = [];
+      value.forEach(v => {
+        labels.push(...parseTaxonomyLabels(v));
+      });
+      return labels;
+    }
+
+    if (typeof value === 'object') {
+      const label = value.Label || value.label || value.Title || value.title || value.name;
+      return label ? [String(label)] : [];
+    }
+
+    return [];
+  };
+
+  const uniqueStrings = (values: string[]): string[] => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    values.forEach(value => {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      result.push(trimmed);
+    });
+
+    return result;
+  };
+
+  const getCellValue = (cells: any[], key: string): string => {
+    const found = cells.find((cell: any) => String(cell.Key || '').toLowerCase() === key.toLowerCase());
+    return found?.Value || '';
+  };
+
+  const extractUserName = (userField: any): string => {
+    if (!userField) return 'Unknown';
+    if (typeof userField === 'string') {
+      const parts = userField.split('|');
+      const email = parts[parts.length - 1];
+      return email.includes('@') ? email.split('@')[0] : email;
+    }
+    return userField;
+  };
+
+  const loadEntityTerms = async (guids: Set<string>): Promise<EntityTermInfo> => {
+    const empty: EntityTermInfo = {
+      labelByGuid: {},
+      groupGuids: new Set<string>(),
+      groupLabels: new Set<string>()
+    };
+
+    if (!guids.size) return empty;
+
+    const resp = await fetch(
+      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${ENTITY_TERM_SET_ID}')/terms`,
+      { headers: { Accept: 'application/json' } }
+    );
+
+    const data = await resp.json();
+    const labelByGuid: Record<string, string> = {};
+    const groupGuids = new Set<string>();
+    const groupLabels = new Set<string>();
+
+    (data.value || []).forEach((term: any) => {
+      const termId = String(term.id || '').toLowerCase();
+      if (!termId || !guids.has(termId)) return;
+
+      const label =
+        term.labels?.find((l: any) => l.isDefault)?.name ||
+        term.labels?.[0]?.name;
+
+      const hasChildren =
+        Number(term.childrenCount || 0) > 0 ||
+        (Array.isArray(term.children) && term.children.length > 0);
+
+      if (label) {
+        labelByGuid[termId] = label;
+        if (hasChildren) {
+          groupLabels.add(label.toLowerCase());
+        }
+      }
+
+      if (hasChildren) {
+        groupGuids.add(termId);
+      }
+    });
+
+    return {
+      labelByGuid,
+      groupGuids,
+      groupLabels
+    };
+  };
+
+  const buildEntityText = (values: any[], entityTermInfo: EntityTermInfo): string => {
+    const guids = new Set<string>();
+    values.forEach(v => collectTermGuids(v, guids));
+
+    const mappedLeafLabels = Array.from(guids)
+      .filter(guid => !entityTermInfo.groupGuids.has(guid))
+      .map(guid => entityTermInfo.labelByGuid[guid])
+      .filter(Boolean) as string[];
+
+    const fallbackLabels: string[] = [];
+    values.forEach(v => {
+      fallbackLabels.push(...parseTaxonomyLabels(v));
+    });
+
+    if (mappedLeafLabels.length) {
+      return uniqueStrings(mappedLeafLabels).join(', ');
+    }
+
+    const filteredFallback = fallbackLabels.filter(label => !entityTermInfo.groupLabels.has(label.toLowerCase()));
+    if (filteredFallback.length) {
+      return uniqueStrings(filteredFallback).join(', ');
+    }
+
+    return '';
+  };
+
+  const fetchDocumentRelatedEntity = async (absoluteUrl: string): Promise<any> => {
+    try {
+      const fileUrl = new URL(absoluteUrl);
+      const serverRelativePath = fileUrl.pathname;
+      const escapedPath = serverRelativePath.replace(/'/g, "''");
+      const pathSegments = fileUrl.pathname.split('/').filter(Boolean);
+      let siteWebUrl = fileUrl.origin;
+
+      if ((pathSegments[0] === 'sites' || pathSegments[0] === 'teams') && pathSegments[1]) {
+        siteWebUrl = `${fileUrl.origin}/${pathSegments[0]}/${pathSegments[1]}`;
+      }
+
+      const endpoints = [
+        `${siteWebUrl}/_api/web/GetFileByServerRelativePath(decodedurl='${escapedPath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`,
+        `${siteWebUrl}/_api/web/GetFileByServerRelativeUrl('${escapedPath}')/ListItemAllFields?$select=RelatedEntity,ReletedEntity`
+      ];
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            headers: { Accept: 'application/json;odata=nometadata' }
+          });
+
+          if (!response.ok) {
+            continue;
+          }
+
+          const data = await response.json();
+          const relatedEntity = data.RelatedEntity || data.ReletedEntity;
+          if (relatedEntity) {
+            return relatedEntity;
+          }
+        } catch (err) {
+          console.warn('Entity documents RelatedEntity fallback request failed', err);
+        }
+      }
+    } catch (err) {
+      console.warn('Entity documents failed to parse URL for entity fallback', err);
+    }
+
+    return null;
+  };
+
+  const dedupeDocuments = (docs: RawDocument[]): RawDocument[] => {
+    const byUrl = new Map<string, RawDocument>();
+
+    docs.forEach(doc => {
+      const existing = byUrl.get(doc.absoluteUrl);
+      if (!existing) {
+        byUrl.set(doc.absoluteUrl, doc);
+        return;
+      }
+
+      byUrl.set(doc.absoluteUrl, {
+        ...existing,
+        relatedEntityValues: [...existing.relatedEntityValues, ...doc.relatedEntityValues]
+      });
+    });
+
+    return Array.from(byUrl.values());
+  };
+
+  const enrichDocumentsWithEntity = async (rawDocuments: RawDocument[]): Promise<Document[]> => {
+    const withFallbackValues = await Promise.all(
+      rawDocuments.map(async doc => {
+        const fallbackEntity = await fetchDocumentRelatedEntity(doc.absoluteUrl);
+        if (!fallbackEntity) {
+          return doc;
+        }
+
+        return {
+          ...doc,
+          relatedEntityValues: [...doc.relatedEntityValues, fallbackEntity]
+        };
+      })
+    );
+
+    const entityGuids = new Set<string>();
+    withFallbackValues.forEach(doc => {
+      doc.relatedEntityValues.forEach(value => collectTermGuids(value, entityGuids));
+    });
+
+    const entityTermInfo = await loadEntityTerms(entityGuids);
+
+    return withFallbackValues.map(doc => ({
+      name: doc.name,
+      activity: doc.activity,
+      entity: buildEntityText(doc.relatedEntityValues, entityTermInfo) || '-',
+      status: doc.status,
+      modifiedDate: doc.modifiedDate,
+      modifiedBy: doc.modifiedBy,
+      absoluteUrl: doc.absoluteUrl
+    }));
+  };
+
   const searchDocumentsByRelatedEntity = async (entityGuid: string): Promise<Document[]> => {
-    const results: Document[] = [];
+    const results: RawDocument[] = [];
 
     const queries = [
       // Managed metadata managed property (most accurate)
@@ -57,7 +356,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
 
     for (const query of queries) {
       const resp = await fetch(
-        `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy'`,
+        `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=500&selectproperties='Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity'`,
         { headers: { Accept: 'application/json;odata=nometadata' } }
       );
 
@@ -70,22 +369,16 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
 
       rows.forEach((row: any) => {
         const cells = row.Cells;
-        const title = cells.find((c: any) => c.Key === 'Title')?.Value;
-        const path = cells.find((c: any) => c.Key === 'Path')?.Value;
-        const lastModified = cells.find((c: any) => c.Key === 'LastModifiedTime')?.Value;
-        const editor = cells.find((c: any) => c.Key === 'Editor')?.Value;
-        const author = cells.find((c: any) => c.Key === 'Author')?.Value;
-        const modifiedBy = cells.find((c: any) => c.Key === 'ModifiedBy')?.Value;
-
-        const extractUserName = (userField: any): string => {
-          if (!userField) return 'Unknown';
-          if (typeof userField === 'string') {
-            const parts = userField.split('|');
-            const email = parts[parts.length - 1];
-            return email.includes('@') ? email.split('@')[0] : email;
-          }
-          return userField;
-        };
+        const title = getCellValue(cells, 'Title');
+        const path = getCellValue(cells, 'Path');
+        const lastModified = getCellValue(cells, 'LastModifiedTime');
+        const editor = getCellValue(cells, 'Editor');
+        const author = getCellValue(cells, 'Author');
+        const modifiedBy = getCellValue(cells, 'ModifiedBy');
+        const relatedEntity = getCellValue(cells, 'RelatedEntity');
+        const relatedEntityTaxId =
+          getCellValue(cells, 'RelatedEntityOWSTAXID') ||
+          getCellValue(cells, 'owstaxIdRelatedEntity');
 
         if (title && path) {
           const pathParts = path.split('/');
@@ -94,11 +387,12 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
           results.push({
             name: title,
             activity: libraryName,
-            entity: entity?.label || libraryName,
+            entity: '',
             status: '',
             modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
             modifiedBy: extractUserName(modifiedBy || editor || author),
-            absoluteUrl: path
+            absoluteUrl: path,
+            relatedEntityValues: [relatedEntity, relatedEntityTaxId].filter(Boolean)
           });
         }
       });
@@ -106,7 +400,8 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
       if (results.length) break;
     }
 
-    return results;
+    const deduped = dedupeDocuments(results);
+    return enrichDocumentsWithEntity(deduped);
   };
 
   const loadDocuments = async () => {
