@@ -4,7 +4,7 @@ import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
 import {
   TENANT_CONFIG,
   buildListItemsApiUrl,
-  buildTermSetTermsApiUrl
+  fetchTermLabelMap
 } from '../../../config/tenantConfig';
 
 interface EntitySummaryTabProps {
@@ -27,34 +27,99 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
 
   /* ================= TAXONOMY & DATA HELPERS ================= */
 
-  const collectTermGuids = (value: any, set: Set<string>) => {
-    if (!value) return;
+  const parseTaxonomyEntries = (value: any): Array<{ guid: string; label: string }> => {
+    if (!value) return [];
+
     if (typeof value === 'string') {
+      const entries: Array<{ guid: string; label: string }> = [];
+
       value
         .split(';#')
-        .filter(v => v.includes('|'))
-        .forEach(v => {
-          const guid = v.split('|')[1];
-          if (guid) set.add(guid.toLowerCase());
+        .map(token => token.trim())
+        .filter(Boolean)
+        .forEach(token => {
+          if (token.includes('|')) {
+            const parts = token.split('|');
+            const label = String(parts[0] || '').trim();
+            const guid = String(parts[1] || '').trim().toLowerCase();
+
+            if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+              entries.push({ guid, label });
+            }
+            return;
+          }
+
+          const guid = token.toLowerCase();
+          if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+            entries.push({ guid, label: '' });
+          }
         });
-      return;
+
+      return entries;
     }
+
     if (Array.isArray(value)) {
-      value.forEach(v => collectTermGuids(v, set));
-      return;
+      const nested: Array<{ guid: string; label: string }> = [];
+      value.forEach(v => {
+        nested.push(...parseTaxonomyEntries(v));
+      });
+      return nested;
     }
-    if (value.TermGuid) {
-      set.add(String(value.TermGuid).toLowerCase());
+
+    if (typeof value === 'object') {
+      const guid = String(
+        value.TermGuid || value.termGuid || value.id || value.Id || ''
+      )
+        .trim()
+        .toLowerCase();
+      const label = String(
+        value.Label || value.label || value.Title || value.name || ''
+      ).trim();
+
+      if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+        return [{ guid, label }];
+      }
+      if (label) {
+        return [{ guid: '', label }];
+      }
     }
+
+    return [];
+  };
+
+  const isReadableTaxonomyLabel = (value: string): boolean => {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    if (TENANT_CONFIG.patterns.guidExact.test(text)) return false;
+    if (/^\d+$/.test(text)) return false;
+    return true;
+  };
+
+  const collectTermGuids = (value: any, set: Set<string>) => {
+    parseTaxonomyEntries(value).forEach(entry => {
+      if (entry.guid) {
+        set.add(entry.guid);
+      }
+    });
   };
 
   const getTaxonomyLabels = (value: any, map: Record<string, string>): string[] => {
-    const guids = new Set<string>();
-    collectTermGuids(value, guids);
-    if (!guids.size) return [];
-    return Array.from(guids)
-      .map(g => map[g] || g)
-      .filter(Boolean);
+    const seen = new Set<string>();
+    const resolved: string[] = [];
+
+    parseTaxonomyEntries(value).forEach(entry => {
+      const mapped = entry.guid ? map[entry.guid] : '';
+      const fallback = isReadableTaxonomyLabel(entry.label) ? entry.label : '';
+      const valueToShow = mapped || fallback || entry.guid;
+      if (!valueToShow) return;
+
+      const key = valueToShow.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      resolved.push(valueToShow);
+    });
+
+    return resolved;
   };
 
   const renderTaxonomy = (value: any, map: Record<string, string>): string =>
@@ -125,18 +190,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
       setState({});
       return;
     }
-    const resp = await fetch(
-      buildTermSetTermsApiUrl(webUrl, setId),
-      { headers: { Accept: 'application/json' } }
-    );
-    const data = await resp.json();
-    const map: Record<string, string> = {};
-    (data.value || []).forEach((t: any) => {
-      if (guids.has(t.id.toLowerCase())) {
-        const label = t.labels?.find((l: any) => l.isDefault)?.name || t.labels?.[0]?.name;
-        if (label) map[t.id.toLowerCase()] = label;
-      }
-    });
+    const map = await fetchTermLabelMap(webUrl, setId, guids);
     setState(map);
   };
 

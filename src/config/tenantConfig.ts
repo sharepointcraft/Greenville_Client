@@ -229,6 +229,71 @@ export const buildListItemsApiUrl = (webUrl: string, listTitle: string): string 
 export const buildTermSetTermsApiUrl = (webUrl: string, termSetId: string): string =>
   `${resolveApiWebUrl(webUrl)}/_api/v2.1/termstore/groups('${TENANT_CONFIG.termStore.groupId}')/sets('${termSetId}')/terms`;
 
+const getODataNextLink = (payload: any): string | undefined => {
+  if (!payload || typeof payload !== 'object') {
+    return undefined;
+  }
+
+  return (
+    payload['@odata.nextLink'] ||
+    payload['@odata.nextlink'] ||
+    payload['odata.nextLink'] ||
+    payload['odata.nextlink']
+  );
+};
+
+export const fetchTermLabelMap = async (
+  webUrl: string,
+  termSetId: string,
+  targetGuids?: Set<string>
+): Promise<Record<string, string>> => {
+  const wanted = targetGuids
+    ? new Set(Array.from(targetGuids).map(g => g.toLowerCase()))
+    : undefined;
+
+  const labels: Record<string, string> = {};
+  const visitedUrls = new Set<string>();
+  let url: string | undefined = buildTermSetTermsApiUrl(webUrl, termSetId);
+
+  while (url && !visitedUrls.has(url)) {
+    visitedUrls.add(url);
+
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' }
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`Term set request failed (${response.status}): ${detail || response.statusText}`);
+    }
+
+    const payload = await response.json();
+    const terms = Array.isArray(payload?.value) ? payload.value : [];
+
+    terms.forEach((term: any) => {
+      const id = String(term?.id || '').toLowerCase();
+      if (!id) return;
+      if (wanted && !wanted.has(id)) return;
+
+      const label =
+        term?.labels?.find((l: any) => l?.isDefault)?.name ||
+        term?.labels?.[0]?.name;
+
+      if (label) {
+        labels[id] = String(label);
+      }
+    });
+
+    if (wanted && Object.keys(labels).length >= wanted.size) {
+      break;
+    }
+
+    url = getODataNextLink(payload);
+  }
+
+  return labels;
+};
+
 export type PriorityFilter = (typeof TENANT_CONFIG.ui.tasks.priorityFilters)[number];
 export type ClientPanelTab = (typeof TENANT_CONFIG.ui.tabs.clientPanel)[number];
 export type EntityPanelTab = (typeof TENANT_CONFIG.ui.tabs.entityPanel)[number];

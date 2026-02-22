@@ -3,12 +3,13 @@ import styles from './SummaryTab.module.scss';
 import {
   TENANT_CONFIG,
   buildListItemsApiUrl,
-  buildTermSetTermsApiUrl
+  fetchTermLabelMap
 } from '../../../config/tenantConfig';
 
 interface SummaryTabProps {
   webUrl: string;
   clientId: number;
+  clientName?: string | null;
 }
 
 const chunk = <T,>(arr: T[], size: number): T[][] =>
@@ -16,46 +17,106 @@ const chunk = <T,>(arr: T[], size: number): T[][] =>
     arr.slice(i * size, i * size + size)
   );
 
-const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
+const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId, clientName }) => {
   const [item, setItem] = React.useState<any>(null);
   const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
   const [entityTerms, setEntityTerms] = React.useState<Record<string, string>>({});
 
   /* ================= TAXONOMY HELPERS ================= */
 
-  const collectTermGuids = (val: any, set: Set<string>) => {
-    if (!val) return;
+  const parseTaxonomyEntries = (val: any): Array<{ guid: string; label: string }> => {
+    if (!val) return [];
 
-    // FIX: Changed "value" to "val" to match the parameter name
     if (typeof val === 'string') {
+      const entries: Array<{ guid: string; label: string }> = [];
+
       val
         .split(';#')
-        .filter(v => v.includes('|'))
-        .forEach(v => {
-          const parts = v.split('|');
-          if (parts[1]) set.add(parts[1].toLowerCase());
+        .map(token => token.trim())
+        .filter(Boolean)
+        .forEach(token => {
+          if (token.includes('|')) {
+            const parts = token.split('|');
+            const label = String(parts[0] || '').trim();
+            const guid = String(parts[1] || '').trim().toLowerCase();
+
+            if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+              entries.push({ guid, label });
+            }
+            return;
+          }
+
+          const guid = token.toLowerCase();
+          if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+            entries.push({ guid, label: '' });
+          }
         });
-      return;
+
+      return entries;
     }
 
     if (Array.isArray(val)) {
-      val.forEach(v => collectTermGuids(v, set));
-      return;
+      const nested: Array<{ guid: string; label: string }> = [];
+      val.forEach(v => {
+        nested.push(...parseTaxonomyEntries(v));
+      });
+      return nested;
     }
 
-    if (val.TermGuid) {
-      set.add(String(val.TermGuid).toLowerCase());
+    if (typeof val === 'object') {
+      const guid = String(
+        val.TermGuid || val.termGuid || val.id || val.Id || ''
+      )
+        .trim()
+        .toLowerCase();
+      const label = String(
+        val.Label || val.label || val.Title || val.name || ''
+      ).trim();
+
+      if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+        return [{ guid, label }];
+      }
+      if (label) {
+        return [{ guid: '', label }];
+      }
     }
+
+    return [];
+  };
+
+  const isReadableTaxonomyLabel = (value: string): boolean => {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    if (TENANT_CONFIG.patterns.guidExact.test(text)) return false;
+    if (/^\d+$/.test(text)) return false;
+    return true;
+  };
+
+  const collectTermGuids = (val: any, set: Set<string>) => {
+    parseTaxonomyEntries(val).forEach(entry => {
+      if (entry.guid) {
+        set.add(entry.guid);
+      }
+    });
   };
 
   const getTaxonomyLabels = (val: any, map: Record<string, string>): string[] => {
-    const guids = new Set<string>();
-    collectTermGuids(val, guids);
-    if (!guids.size) return [];
+    const seen = new Set<string>();
+    const resolved: string[] = [];
 
-    return Array.from(guids)
-      .map(g => map[g] || g)
-      .filter(Boolean);
+    parseTaxonomyEntries(val).forEach(entry => {
+      const mapped = entry.guid ? map[entry.guid] : '';
+      const fallback = isReadableTaxonomyLabel(entry.label) ? entry.label : '';
+      const value = mapped || fallback || entry.guid;
+      if (!value) return;
+
+      const key = value.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      resolved.push(value);
+    });
+
+    return resolved;
   };
 
   const renderTaxonomy = (val: any, map: Record<string, string>): string =>
@@ -170,23 +231,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
       setState({});
       return;
     }
-    const resp = await fetch(
-      buildTermSetTermsApiUrl(webUrl, setId),
-      { headers: { Accept: 'application/json' } }
-    );
-
-    const data = await resp.json();
-    const map: Record<string, string> = {};
-
-    (data.value || []).forEach((t: any) => {
-      if (guids.has(t.id.toLowerCase())) {
-        const label =
-          t.labels?.find((l: any) => l.isDefault)?.name ||
-          t.labels?.[0]?.name;
-        if (label) map[t.id.toLowerCase()] = label;
-      }
-    });
-
+    const map = await fetchTermLabelMap(webUrl, setId, guids);
     setState(map);
   };
 
@@ -235,7 +280,32 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
   /* ================= SECTIONS ================= */
 
   const coreFields = [
-    { label: 'Client Name', value: renderClientTaxonomy(item.Client) },
+    {
+      label: 'Client Name',
+      value: (() => {
+        const headerName = String(clientName || '').trim();
+        if (isReadableTaxonomyLabel(headerName)) {
+          return headerName;
+        }
+
+        const termName = renderClientTaxonomy(item.Client);
+        if (isReadableTaxonomyLabel(termName)) {
+          return termName;
+        }
+
+        const alias = String(item.EntityAliases || '').trim();
+        if (isReadableTaxonomyLabel(alias)) {
+          return alias;
+        }
+
+        const title = String(item.Title || '').trim();
+        if (isReadableTaxonomyLabel(title)) {
+          return title;
+        }
+
+        return termName;
+      })()
+    },
     { label: 'Aliases', value: item.EntityAliases },
     { label: 'Address', value: renderMultiline(item.WorkAddress) },
     { label: 'Marital Status', value: item.MaritalStatus },

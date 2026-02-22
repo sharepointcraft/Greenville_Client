@@ -3,7 +3,7 @@ import styles from './EntitiesTab.module.scss';
 import {
   TENANT_CONFIG,
   buildListItemsApiUrl,
-  buildTermSetTermsApiUrl
+  fetchTermLabelMap
 } from '../../../config/tenantConfig';
 
 export interface EntitySelection {
@@ -105,20 +105,17 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
       });
 
       /* 4️⃣ Resolve Entity names */
-      const termData = await fetchJson(
-        buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities)
+      const termLabelMap = await fetchTermLabelMap(
+        webUrl,
+        TENANT_CONFIG.termStore.sets.entities,
+        entityGuids
       );
 
       const labelMap = new Map<string, string>();
-      (termData.value || []).forEach((t: any) => {
-        const id = String(t.id).toLowerCase();
-        if (entityGuids.has(id)) {
-          const label =
-            t.labels?.find((l: any) => l.isDefault)?.name ||
-            t.labels?.[0]?.name;
-          if (label) {
-            labelMap.set(id, label);
-          }
+      Object.keys(termLabelMap).forEach(id => {
+        const label = termLabelMap[id];
+        if (label) {
+          labelMap.set(id, label);
         }
       });
 
