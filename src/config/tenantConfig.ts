@@ -88,7 +88,7 @@ const REALITY_CRAFT = {
       },
       queries: {
         listSelect:
-          'Id,Title,Status,Priority,DueDate1,RelatedClient,RelatedEntity,AssignedTo1/Title,AssignedTo1/EMail',
+          'Id,Title,Status,Priority,DueDate1,RelatedClient,RelatedEntity,AssignedTo1/Title',
         listExpand: 'AssignedTo1'
       }
     }

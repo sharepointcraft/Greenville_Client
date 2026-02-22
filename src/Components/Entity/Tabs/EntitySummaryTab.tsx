@@ -190,8 +190,13 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
       setState({});
       return;
     }
-    const map = await fetchTermLabelMap(webUrl, setId, guids);
-    setState(map);
+    try {
+      const map = await fetchTermLabelMap(webUrl, setId, guids);
+      setState(map);
+    } catch (error) {
+      console.warn('Entity summary term load error', error);
+      setState({});
+    }
   };
 
   /* ================= LOAD SUMMARY ================= */
@@ -199,6 +204,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
   const loadSummary = async () => {
     if (!entity?.id) {
       setItem(null);
+      setError(null);
       setClientTerms({});
       setEntityTerms({});
       setBankTerms({});
@@ -208,18 +214,65 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
 
     try {
       setLoading(true);
+      setError(null);
       // 1. Instantly clear the item to force the "Loading..." UI state
       setItem(null); 
 
       const fetchJson = async (url: string) => {
         const resp = await fetch(url, { headers: { Accept: 'application/json;odata=nometadata' } });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          const detail = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${detail || 'Request failed'}`);
+        }
         return resp.json();
       };
 
-      const data = await fetchJson(
-        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.entities.title)}(${entity.id})?$select=${TENANT_CONFIG.lists.entities.queries.summarySelect}&$expand=${TENANT_CONFIG.lists.entities.queries.summaryExpand}`
+      const minimalSummarySelect =
+        'Id,Title,Entity,RelatedClient,Bank,EntityAliases,FederalTaxID,AccountNo,RoutingNo,EntityDesc';
+
+      const selectCandidates = Array.from(
+        new Set([
+          TENANT_CONFIG.lists.entities.queries.summarySelect,
+          '*',
+          minimalSummarySelect
+        ])
       );
+
+      const expandCandidates = Array.from(
+        new Set([TENANT_CONFIG.lists.entities.queries.summaryExpand, ''])
+      );
+
+      let data: any = null;
+      let lastSummaryError: Error | null = null;
+
+      for (const select of selectCandidates) {
+        const hasProjectedFields = select.includes('/');
+        const candidateExpandList = hasProjectedFields
+          ? expandCandidates
+          : ['', TENANT_CONFIG.lists.entities.queries.summaryExpand];
+
+        for (const expand of candidateExpandList) {
+          try {
+            const expandPart = expand ? `&$expand=${expand}` : '';
+            data = await fetchJson(
+              `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.entities.title)}(${entity.id})?` +
+                `$select=${select}${expandPart}`
+            );
+            lastSummaryError = null;
+            break;
+          } catch (error) {
+            lastSummaryError = error instanceof Error ? error : new Error(String(error));
+          }
+        }
+
+        if (!lastSummaryError) {
+          break;
+        }
+      }
+
+      if (!data && lastSummaryError) {
+        throw lastSummaryError;
+      }
 
       const clientGuids = new Set<string>();
       const entityGuids = new Set<string>();
@@ -241,7 +294,11 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
 
     } catch (err) {
       console.error('Entity summary load error', err);
-      setError('Failed to load entity summary');
+      setError(
+        err instanceof Error
+          ? `Failed to load entity summary: ${err.message}`
+          : 'Failed to load entity summary'
+      );
       setItem(null);
       setClientTerms({});
       setEntityTerms({});

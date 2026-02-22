@@ -158,6 +158,86 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     return userField;
   };
 
+  const hasEntityValue = (values: any[]): boolean => {
+    const guids = new Set<string>();
+    values.forEach(v => collectTermGuids(v, guids));
+    if (guids.size) return true;
+    return values.some(v => parseTaxonomyLabels(v).length > 0);
+  };
+
+  const normalizeText = (value: string): string =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+  const buildEntityLabelCandidates = (entityLabel: string): Set<string> => {
+    const candidates = new Set<string>();
+    const normalized = normalizeText(entityLabel);
+    if (normalized) {
+      candidates.add(normalized);
+    }
+
+    const withoutSuffix = normalized
+      .replace(/\b(llc|inc|corp|corporation|ltd|lp|l\.l\.c\.)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (withoutSuffix && withoutSuffix !== normalized) {
+      candidates.add(withoutSuffix);
+    }
+
+    return candidates;
+  };
+
+  const matchesEntity = (
+    values: any[],
+    entityGuid: string,
+    entityLabelCandidates: Set<string>
+  ): boolean => {
+    const wantedGuid = String(entityGuid || '').toLowerCase();
+    const guids = new Set<string>();
+    values.forEach(v => collectTermGuids(v, guids));
+
+    if (wantedGuid && guids.has(wantedGuid)) {
+      return true;
+    }
+
+    const labelValues: string[] = [];
+    values.forEach((v: any) => {
+      const parsed = parseTaxonomyLabels(v);
+      parsed.forEach((label: string) => {
+        labelValues.push(normalizeText(label));
+      });
+    });
+
+    const labels = uniqueStrings(labelValues);
+
+    if (!labels.length || !entityLabelCandidates.size) {
+      return false;
+    }
+
+    return labels.some(label =>
+      Array.from(entityLabelCandidates).some(candidate =>
+        label === candidate || label.includes(candidate) || candidate.includes(label)
+      )
+    );
+  };
+
+  const pathMatchesEntityLabel = (
+    absoluteUrl: string,
+    entityLabelCandidates: Set<string>
+  ): boolean => {
+    try {
+      const decodedPath = normalizeText(decodeURIComponent(new URL(absoluteUrl).pathname));
+      return Array.from(entityLabelCandidates).some(candidate =>
+        decodedPath.includes(candidate) || candidate.includes(decodedPath)
+      );
+    } catch {
+      return false;
+    }
+  };
+
   const loadEntityTerms = async (guids: Set<string>): Promise<EntityTermInfo> => {
     const empty: EntityTermInfo = {
       labelByGuid: {},
@@ -299,6 +379,10 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
   const enrichDocumentsWithEntity = async (rawDocuments: RawDocument[]): Promise<Document[]> => {
     const withFallbackValues = await Promise.all(
       rawDocuments.map(async doc => {
+        if (hasEntityValue(doc.relatedEntityValues)) {
+          return doc;
+        }
+
         const fallbackEntity = await fetchDocumentRelatedEntity(doc.absoluteUrl);
         if (!fallbackEntity) {
           return doc;
@@ -329,34 +413,20 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     }));
   };
 
-  const searchDocumentsByRelatedEntity = async (entityGuid: string): Promise<Document[]> => {
+  const searchDocumentsByRelatedEntity = async (
+    entityGuid: string,
+    entityLabel: string
+  ): Promise<Document[]> => {
     const results: RawDocument[] = [];
     const documentClass = TENANT_CONFIG.search.contentClassDocumentLibrary;
+    const documentPath = TENANT_CONFIG.libraries.documentCenterPath;
     const relatedEntityTaxId = TENANT_CONFIG.search.managedProperties.relatedEntityTaxId;
     const relatedEntity = TENANT_CONFIG.search.managedProperties.relatedEntity;
     const relatedEntityTaxIdFallback = TENANT_CONFIG.search.managedProperties.relatedEntityTaxIdFallback;
+    const entityLabelCandidates = buildEntityLabelCandidates(entityLabel);
 
-    const queries = [
-      // Managed metadata managed property (most accurate)
-      `${relatedEntityTaxId}:("${entityGuid}") AND contentclass:${documentClass}`,
-      // Sometimes crawled property surfaces as RelatedEntity
-      `${relatedEntity}:("${entityGuid}") AND contentclass:${documentClass}`,
-      // Fallback plain text
-      `"${entityGuid}" AND contentclass:${documentClass}`
-    ];
-
-    for (const query of queries) {
-      const resp = await fetch(
-        `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=${TENANT_CONFIG.search.rowLimitDefault}&selectproperties='${TENANT_CONFIG.search.selectProperties.documents}'`,
-        { headers: { Accept: 'application/json;odata=nometadata' } }
-      );
-
-      if (!resp.ok) {
-        continue;
-      }
-
-      const data = await resp.json();
-      const rows = data.PrimaryQueryResult?.RelevantResults?.Table?.Rows || [];
+    const mapRowsToRawDocuments = (rows: any[]): RawDocument[] => {
+      const mapped: RawDocument[] = [];
 
       rows.forEach((row: any) => {
         const cells = row.Cells;
@@ -375,7 +445,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
           const pathParts = path.split('/');
           const libraryName = pathParts[pathParts.length - 2] || 'Unknown';
 
-          results.push({
+          mapped.push({
             name: title,
             activity: libraryName,
             entity: '',
@@ -388,7 +458,147 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
         }
       });
 
-      if (results.length) break;
+      return mapped;
+    };
+
+    const runSearchQuery = async (
+      query: string,
+      rowLimit: number,
+      selectProperties: string,
+      startRow: number = 0
+    ): Promise<RawDocument[]> => {
+      try {
+        const startRowPart = startRow > 0 ? `&startrow=${startRow}` : '';
+        const resp = await fetch(
+          `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=${rowLimit}${startRowPart}&selectproperties='${selectProperties}'`,
+          { headers: { Accept: 'application/json;odata=nometadata' } }
+        );
+
+        if (!resp.ok) {
+          return [];
+        }
+
+        const data = await resp.json();
+        const rows = data.PrimaryQueryResult?.RelevantResults?.Table?.Rows || [];
+        return mapRowsToRawDocuments(rows);
+      } catch (error) {
+        console.warn('Entity documents search query failed', error);
+        return [];
+      }
+    };
+
+    const scopedQueries = [
+      `${relatedEntityTaxId}:("${entityGuid}") AND contentclass:${documentClass} AND path:"${documentPath}"`,
+      `${relatedEntityTaxIdFallback}:("${entityGuid}") AND contentclass:${documentClass} AND path:"${documentPath}"`,
+      `${relatedEntity}:("${entityGuid}") AND contentclass:${documentClass} AND path:"${documentPath}"`,
+      `"${entityGuid}" AND contentclass:${documentClass} AND path:"${documentPath}"`
+    ];
+
+    const scopedLabelQueries: string[] = [];
+    Array.from(entityLabelCandidates).forEach((label: string) => {
+      const escaped = label.replace(/"/g, '""');
+      scopedLabelQueries.push(
+        `${relatedEntity}:("${escaped}") AND contentclass:${documentClass} AND path:"${documentPath}"`
+      );
+      scopedLabelQueries.push(
+        `"${escaped}" AND contentclass:${documentClass} AND path:"${documentPath}"`
+      );
+    });
+
+    const unscopedQueries = [
+      `${relatedEntityTaxId}:("${entityGuid}") AND contentclass:${documentClass}`,
+      `${relatedEntityTaxIdFallback}:("${entityGuid}") AND contentclass:${documentClass}`,
+      `${relatedEntity}:("${entityGuid}") AND contentclass:${documentClass}`,
+      `"${entityGuid}" AND contentclass:${documentClass}`
+    ];
+
+    const unscopedLabelQueries: string[] = [];
+    Array.from(entityLabelCandidates).forEach((label: string) => {
+      const escaped = label.replace(/"/g, '""');
+      unscopedLabelQueries.push(
+        `${relatedEntity}:("${escaped}") AND contentclass:${documentClass}`
+      );
+      unscopedLabelQueries.push(`"${escaped}" AND contentclass:${documentClass}`);
+    });
+
+    const candidateQueries = [
+      ...scopedQueries,
+      ...scopedLabelQueries,
+      ...unscopedQueries,
+      ...unscopedLabelQueries
+    ];
+
+    for (const query of candidateQueries) {
+      const docs = await runSearchQuery(
+        query,
+        TENANT_CONFIG.search.rowLimitDefault,
+        TENANT_CONFIG.search.selectProperties.documents
+      );
+
+      if (docs.length) {
+        results.push(...docs);
+        break;
+      }
+    }
+
+    // Final fallback: load docs from doc center path and filter by RelatedEntity client-side.
+    if (!results.length) {
+      const allDocs: RawDocument[] = [];
+      const pageSize = Math.min(TENANT_CONFIG.search.rowLimitExpanded, 500);
+      const maxScan = TENANT_CONFIG.queryLimits.listTop;
+      const fallbackQuery = `contentclass:${documentClass} AND path:"${documentPath}"`;
+
+      for (let startRow = 0; startRow < maxScan; startRow += pageSize) {
+        const page = await runSearchQuery(
+          fallbackQuery,
+          pageSize,
+          TENANT_CONFIG.search.selectProperties.documentsWithRelatedClient,
+          startRow
+        );
+
+        if (!page.length) {
+          break;
+        }
+
+        allDocs.push(...page);
+
+        if (page.length < pageSize) {
+          break;
+        }
+      }
+
+      const directMatches = allDocs.filter(doc =>
+        matchesEntity(doc.relatedEntityValues, entityGuid, entityLabelCandidates) ||
+        pathMatchesEntityLabel(doc.absoluteUrl, entityLabelCandidates)
+      );
+
+      if (directMatches.length) {
+        results.push(...directMatches);
+      } else if (allDocs.length) {
+        const fallbackMatches = await Promise.all(
+          allDocs.map(async doc => {
+            const fallbackEntity = await fetchDocumentRelatedEntity(doc.absoluteUrl);
+            if (!fallbackEntity) {
+              return null;
+            }
+
+            const combinedValues = [...doc.relatedEntityValues, fallbackEntity];
+            if (
+              !matchesEntity(combinedValues, entityGuid, entityLabelCandidates) &&
+              !pathMatchesEntityLabel(doc.absoluteUrl, entityLabelCandidates)
+            ) {
+              return null;
+            }
+
+            return {
+              ...doc,
+              relatedEntityValues: combinedValues
+            };
+          })
+        );
+
+        results.push(...(fallbackMatches.filter(Boolean) as RawDocument[]));
+      }
     }
 
     const deduped = dedupeDocuments(results);
@@ -406,7 +616,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
       setLoading(true);
       setError(null);
 
-      const docs = await searchDocumentsByRelatedEntity(entity.termGuid);
+      const docs = await searchDocumentsByRelatedEntity(entity.termGuid, entity.label);
       setDocuments(docs);
       setActiveActivity(TENANT_CONFIG.libraries.entityActivityFilters[0]);
     } catch (err) {

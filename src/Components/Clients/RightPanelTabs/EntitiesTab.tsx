@@ -53,6 +53,70 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
     }
   };
 
+  const parseEntityEntries = (value: any): Array<{ guid: string; label: string }> => {
+    if (!value) return [];
+
+    if (typeof value === 'string') {
+      const entries: Array<{ guid: string; label: string }> = [];
+
+      value
+        .split(';#')
+        .map(token => token.trim())
+        .filter(Boolean)
+        .forEach(token => {
+          if (token.includes('|')) {
+            const parts = token.split('|');
+            const label = String(parts[0] || '').trim();
+            const guid = String(parts[1] || '').trim().toLowerCase();
+            if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+              entries.push({ guid, label });
+            }
+            return;
+          }
+
+          const guid = token.toLowerCase();
+          if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+            entries.push({ guid, label: '' });
+          }
+        });
+
+      return entries;
+    }
+
+    if (Array.isArray(value)) {
+      const entries: Array<{ guid: string; label: string }> = [];
+      value.forEach(v => {
+        entries.push(...parseEntityEntries(v));
+      });
+      return entries;
+    }
+
+    if (typeof value === 'object') {
+      const guid = String(
+        value.TermGuid || value.termGuid || value.id || value.Id || ''
+      )
+        .trim()
+        .toLowerCase();
+      const label = String(
+        value.Label || value.label || value.Title || value.name || ''
+      ).trim();
+
+      if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+        return [{ guid, label }];
+      }
+    }
+
+    return [];
+  };
+
+  const isReadableName = (value: string): boolean => {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    if (TENANT_CONFIG.patterns.guidExact.test(text)) return false;
+    if (/^\d+$/.test(text)) return false;
+    return true;
+  };
+
   /* ---------------- LOAD ENTITIES ---------------- */
 
   const loadEntities = async () => {
@@ -70,7 +134,7 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
       /* 1️⃣ Load all entities */
       const data = await fetchJson(
         `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.entities.title)}?` +
-          `$select=${TENANT_CONFIG.lists.entities.queries.listSelect}&$top=${TENANT_CONFIG.queryLimits.listTop}`
+          `$select=${TENANT_CONFIG.lists.entities.queries.listSelect},Title&$top=${TENANT_CONFIG.queryLimits.listTop}`
       );
 
       const matchedEntities: any[] = [];
@@ -93,13 +157,18 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
       /* 3️⃣ Collect Entity term GUIDs */
       const entityGuids = new Set<string>();
       const guidToItemId = new Map<string, number>();
+      const fallbackLabelByGuid = new Map<string, string>();
       matchedEntities.forEach(e => {
-        const guids = new Set<string>();
-        collectTermGuids(e.Entity, guids);
-        guids.forEach(g => {
-          entityGuids.add(g);
-          if (!guidToItemId.has(g)) {
-            guidToItemId.set(g, e.Id);
+        const titleFallback = String(e.Title || '').trim();
+        parseEntityEntries(e.Entity).forEach(entry => {
+          entityGuids.add(entry.guid);
+          if (!guidToItemId.has(entry.guid)) {
+            guidToItemId.set(entry.guid, e.Id);
+          }
+          if (isReadableName(entry.label) && !fallbackLabelByGuid.has(entry.guid)) {
+            fallbackLabelByGuid.set(entry.guid, entry.label);
+          } else if (isReadableName(titleFallback) && !fallbackLabelByGuid.has(entry.guid)) {
+            fallbackLabelByGuid.set(entry.guid, titleFallback);
           }
         });
       });
@@ -121,10 +190,18 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
 
       const items: EntitySelection[] = [];
       entityGuids.forEach(guid => {
+        const mapped = labelMap.get(guid) || '';
+        const fallback = fallbackLabelByGuid.get(guid) || '';
+        const label = isReadableName(mapped)
+          ? mapped
+          : isReadableName(fallback)
+            ? fallback
+            : guid;
+
         items.push({
           id: guidToItemId.get(guid),
           termGuid: guid,
-          label: labelMap.get(guid) || guid,
+          label,
           relatedClientGuid: clientTermGuid
         });
       });

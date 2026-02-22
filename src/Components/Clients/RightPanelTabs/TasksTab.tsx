@@ -3,7 +3,7 @@ import styles from './TasksTab.module.scss';
 import {
   TENANT_CONFIG,
   buildListItemsApiUrl,
-  buildTermSetTermsApiUrl,
+  fetchTermLabelMap,
   type PriorityFilter
 } from '../../../config/tenantConfig';
 
@@ -18,6 +18,8 @@ const TasksTab: React.FC<TasksTabProps> = ({
   clientId,
   clientTermGuid
 }) => {
+  type TaskSortKey = 'Title' | 'Entity' | 'AssignedTo' | 'DueDate' | 'Priority' | 'Status';
+
   const [tasks, setTasks] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -27,7 +29,7 @@ const TasksTab: React.FC<TasksTabProps> = ({
     TENANT_CONFIG.ui.tasks.priorityFilters[0]
   );
   const [showAddPopup, setShowAddPopup] = React.useState(false);
-  const [sortConfig, setSortConfig] = React.useState<{ key: 'Title' | 'Entity' | 'AssignedTo' | 'DueDate1' | 'Priority' | 'Status'; direction: 'asc' | 'desc' }>({
+  const [sortConfig, setSortConfig] = React.useState<{ key: TaskSortKey; direction: 'asc' | 'desc' }>({
     key: 'Title',
     direction: 'asc'
   });
@@ -112,6 +114,12 @@ const TasksTab: React.FC<TasksTabProps> = ({
     return '—';
   };
 
+  const getAssignedToValue = (task: any): any =>
+    task.AssignedTo1 || task.AssignedTo;
+
+  const getDueDateValue = (task: any): any =>
+    task.DueDate1 || task.DueDate;
+
   const normalizePriority = (value: any): string => {
     const text = String(value || '').toLowerCase();
     if (text.includes('high')) return 'HIGH';
@@ -158,7 +166,7 @@ const TasksTab: React.FC<TasksTabProps> = ({
     return styles.statusDefault;
   };
 
-  const loadEntityTerms = async (fetchJson: (url: string) => Promise<any>, taskItems: any[]): Promise<void> => {
+  const loadEntityTerms = async (taskItems: any[]): Promise<void> => {
     const entityGuids = new Set<string>();
     taskItems.forEach(task => collectTermGuids(task.RelatedEntity || task.ReletedEntity, entityGuids));
 
@@ -167,22 +175,11 @@ const TasksTab: React.FC<TasksTabProps> = ({
       return;
     }
 
-    const termData = await fetchJson(
-      buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities)
+    const map = await fetchTermLabelMap(
+      webUrl,
+      TENANT_CONFIG.termStore.sets.entities,
+      entityGuids
     );
-
-    const map: Record<string, string> = {};
-    (termData.value || []).forEach((term: any) => {
-      const id = String(term.id || '').toLowerCase();
-      if (!id || !entityGuids.has(id)) return;
-
-      const label =
-        term.labels?.find((l: any) => l.isDefault)?.name ||
-        term.labels?.[0]?.name;
-      if (label) {
-        map[id] = label;
-      }
-    });
 
     setEntityTerms(map);
   };
@@ -202,8 +199,8 @@ const TasksTab: React.FC<TasksTabProps> = ({
       const fields = [
         String(task.Title || ''),
         String(renderEntity(task) || ''),
-        String(renderAssignedTo(task.AssignedTo1) || ''),
-        String(task.DueDate1 || ''),
+        String(renderAssignedTo(getAssignedToValue(task)) || ''),
+        String(getDueDateValue(task) || ''),
         String(task.Priority || ''),
         String(task.Status || '')
       ]
@@ -227,14 +224,14 @@ const TasksTab: React.FC<TasksTabProps> = ({
       }
 
       if (key === 'AssignedTo') {
-        const av = renderAssignedTo(a.AssignedTo1).toLowerCase();
-        const bv = renderAssignedTo(b.AssignedTo1).toLowerCase();
+        const av = renderAssignedTo(getAssignedToValue(a)).toLowerCase();
+        const bv = renderAssignedTo(getAssignedToValue(b)).toLowerCase();
         return av.localeCompare(bv) * dir;
       }
 
-      if (key === 'DueDate1') {
-        const av = new Date(a.DueDate1 || '').getTime();
-        const bv = new Date(b.DueDate1 || '').getTime();
+      if (key === 'DueDate') {
+        const av = new Date(getDueDateValue(a) || '').getTime();
+        const bv = new Date(getDueDateValue(b) || '').getTime();
         return (av - bv) * dir;
       }
 
@@ -320,13 +317,110 @@ const TasksTab: React.FC<TasksTabProps> = ({
         return;
       }
 
-      const taskData = await fetchJson(
-        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.tasks.title)}?` +
-          `$select=${TENANT_CONFIG.lists.tasks.queries.listSelect}&` +
-          `$expand=${TENANT_CONFIG.lists.tasks.queries.listExpand}&` +
-          `$top=${TENANT_CONFIG.queryLimits.listTop}`,
+      const replaceInternalName = (
+        source: string,
+        from: string,
+        to: string
+      ): string => source.replace(new RegExp(`\\b${from}\\b`, 'g'), to);
+
+      const stripSelectToken = (select: string, token: string): string => {
+        const filtered = select
+          .split(',')
+          .map(part => part.trim())
+          .filter(part => part && part.toLowerCase() !== token.toLowerCase());
+        return filtered.join(',');
+      };
+
+      const safeSelectCandidates = [
+        'Id,Title,Status,Priority,RelatedClient,RelatedEntity,DueDate1',
+        'Id,Title,Status,Priority,RelatedClient,RelatedEntity,DueDate',
+        'Id,Title,Status,Priority,RelatedClient,RelatedEntity',
+        'Id,Title,Status,Priority,RelatedClient,DueDate1',
+        'Id,Title,Status,Priority,RelatedClient,DueDate',
+        'Id,Title,Status,Priority,RelatedClient'
+      ];
+
+      const baseSelectCandidates = [
+        ...safeSelectCandidates,
+        TENANT_CONFIG.lists.tasks.queries.listSelect,
+        replaceInternalName(TENANT_CONFIG.lists.tasks.queries.listSelect, 'DueDate1', 'DueDate'),
+        replaceInternalName(TENANT_CONFIG.lists.tasks.queries.listSelect, 'AssignedTo1', 'AssignedTo'),
+        replaceInternalName(
+          replaceInternalName(TENANT_CONFIG.lists.tasks.queries.listSelect, 'DueDate1', 'DueDate'),
+          'AssignedTo1',
+          'AssignedTo'
+        )
+      ];
+
+      const selectCandidatesSet = new Set<string>();
+      baseSelectCandidates.forEach(base => {
+        const variants = [
+          base,
+          stripSelectToken(base, 'AssignedTo1/EMail'),
+          stripSelectToken(base, 'AssignedTo/EMail'),
+          stripSelectToken(
+            stripSelectToken(base, 'AssignedTo1/EMail'),
+            'AssignedTo1/Title'
+          ),
+          stripSelectToken(
+            stripSelectToken(base, 'AssignedTo/EMail'),
+            'AssignedTo/Title'
+          )
+        ];
+
+        variants.forEach(variant => {
+          const normalized = variant
+            .replace(/,{2,}/g, ',')
+            .replace(/^,|,$/g, '')
+            .trim();
+          if (normalized) {
+            selectCandidatesSet.add(normalized);
+          }
+        });
+      });
+
+      const selectCandidates = Array.from(selectCandidatesSet);
+
+      const expandCandidates = Array.from(
+        new Set([
+          TENANT_CONFIG.lists.tasks.queries.listExpand,
+          replaceInternalName(TENANT_CONFIG.lists.tasks.queries.listExpand, 'AssignedTo1', 'AssignedTo'),
+          ''
+        ])
       );
-      const allTasks = taskData.value || [];
+
+      let allTasks: any[] = [];
+      let lastTaskError: Error | null = null;
+
+      for (const select of selectCandidates) {
+        const hasAssignedProjection = /AssignedTo(?:1)?\//i.test(select);
+        const candidateExpandList = hasAssignedProjection ? expandCandidates : [''];
+
+        for (const expand of candidateExpandList) {
+          try {
+            const expandPart = expand ? `$expand=${expand}&` : '';
+            const taskData = await fetchJson(
+              `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.tasks.title)}?` +
+                `$select=${select}&` +
+                `${expandPart}` +
+                `$top=${TENANT_CONFIG.queryLimits.listTop}`
+            );
+            allTasks = taskData.value || [];
+            lastTaskError = null;
+            break;
+          } catch (error) {
+            lastTaskError = error instanceof Error ? error : new Error(String(error));
+          }
+        }
+
+        if (!lastTaskError) {
+          break;
+        }
+      }
+
+      if (lastTaskError) {
+        throw lastTaskError;
+      }
 
       const filtered = allTasks.filter((task: any) => {
         const taskClientGuids = new Set(extractTermGuids(task.RelatedClient));
@@ -339,7 +433,7 @@ const TasksTab: React.FC<TasksTabProps> = ({
         return isMatch;
       });
 
-      await loadEntityTerms(fetchJson, filtered);
+      await loadEntityTerms(filtered);
       setTasks(filtered);
     } catch (err) {
       console.error('Tasks load error', err);
@@ -478,9 +572,9 @@ const TasksTab: React.FC<TasksTabProps> = ({
             <button
               type="button"
               className={`${styles.headerCell} ${styles.sortable} ${
-                sortConfig.key === 'DueDate1' ? styles[`sort${sortConfig.direction}`] : ''
+                sortConfig.key === 'DueDate' ? styles[`sort${sortConfig.direction}`] : ''
               }`}
-              onClick={() => handleSort('DueDate1')}
+              onClick={() => handleSort('DueDate')}
             >
               <span>Due Date</span>
             </button>
@@ -513,8 +607,8 @@ const TasksTab: React.FC<TasksTabProps> = ({
               <div key={t.Id} className={styles.dataRow}>
                 <div className={styles.link}>{t.Title}</div>
                 <div>{renderEntity(t)}</div>
-                <div>{renderAssignedTo(t.AssignedTo1)}</div>
-                <div>{formatDate(t.DueDate1)}</div>
+                <div>{renderAssignedTo(getAssignedToValue(t))}</div>
+                <div>{formatDate(getDueDateValue(t))}</div>
                 <div className={getPriorityClass(t.Priority)}>{t.Priority || '—'}</div>
                 <div className={getStatusClass(t.Status)}>{t.Status || '—'}</div>
               </div>

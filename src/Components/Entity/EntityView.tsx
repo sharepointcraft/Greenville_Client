@@ -10,7 +10,7 @@ import EntityTasksTab from './Tabs/EntityTasksTab';
 import {
   TENANT_CONFIG,
   buildListItemsApiUrl,
-  buildTermSetTermsApiUrl,
+  fetchTermLabelMap,
   type EntityPanelTab
 } from '../../config/tenantConfig';
 
@@ -22,28 +22,68 @@ interface EntityViewProps {
   onEntityChange?: (entity: EntitySelection) => void;
 }
 
-const collectTermGuids = (value: any, set: Set<string>) => {
-  if (!value) return;
+const parseEntityEntries = (value: any): Array<{ guid: string; label: string }> => {
+  if (!value) return [];
 
   if (typeof value === 'string') {
+    const entries: Array<{ guid: string; label: string }> = [];
+
     value
       .split(';#')
-      .filter(v => v.includes('|'))
-      .forEach(v => {
-        const guid = v.split('|')[1];
-        if (guid) set.add(guid.toLowerCase());
+      .map(token => token.trim())
+      .filter(Boolean)
+      .forEach(token => {
+        if (token.includes('|')) {
+          const parts = token.split('|');
+          const label = String(parts[0] || '').trim();
+          const guid = String(parts[1] || '').trim().toLowerCase();
+          if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+            entries.push({ guid, label });
+          }
+          return;
+        }
+
+        const guid = token.toLowerCase();
+        if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+          entries.push({ guid, label: '' });
+        }
       });
-    return;
+
+    return entries;
   }
 
   if (Array.isArray(value)) {
-    value.forEach(v => collectTermGuids(v, set));
-    return;
+    const entries: Array<{ guid: string; label: string }> = [];
+    value.forEach(v => {
+      entries.push(...parseEntityEntries(v));
+    });
+    return entries;
   }
 
-  if (value.TermGuid) {
-    set.add(String(value.TermGuid).toLowerCase());
+  if (typeof value === 'object') {
+    const guid = String(
+      value.TermGuid || value.termGuid || value.id || value.Id || ''
+    )
+      .trim()
+      .toLowerCase();
+    const label = String(
+      value.Label || value.label || value.Title || value.name || ''
+    ).trim();
+
+    if (TENANT_CONFIG.patterns.guidExact.test(guid)) {
+      return [{ guid, label }];
+    }
   }
+
+  return [];
+};
+
+const isReadableEntityLabel = (value: string): boolean => {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (TENANT_CONFIG.patterns.guidExact.test(text)) return false;
+  if (/^\d+$/.test(text)) return false;
+  return true;
 };
 
 const EntityView: React.FC<EntityViewProps> = ({
@@ -88,7 +128,7 @@ const EntityView: React.FC<EntityViewProps> = ({
 
       const data = await fetchJson(
         `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.entities.title)}?` +
-          `$select=${TENANT_CONFIG.lists.entities.queries.listSelect}&$top=${TENANT_CONFIG.queryLimits.listTop}`
+          `$select=${TENANT_CONFIG.lists.entities.queries.listSelect},Title&$top=${TENANT_CONFIG.queryLimits.listTop}`
       );
 
       const matched = data.value || [];
@@ -103,41 +143,51 @@ const EntityView: React.FC<EntityViewProps> = ({
 
       const entityGuids = new Set<string>();
       const guidToItemId = new Map<string, number>();
+      const fallbackLabelByGuid = new Map<string, string>();
 
       matched.forEach((item: any) => {
-        const guids = new Set<string>();
-        collectTermGuids(item.Entity, guids);
-        guids.forEach(g => {
-          entityGuids.add(g);
-          if (!guidToItemId.has(g)) {
-            guidToItemId.set(g, item.Id);
+        const titleFallback = String(item.Title || '').trim();
+        parseEntityEntries(item.Entity).forEach(entry => {
+          entityGuids.add(entry.guid);
+          if (!guidToItemId.has(entry.guid)) {
+            guidToItemId.set(entry.guid, item.Id);
+          }
+          if (isReadableEntityLabel(entry.label) && !fallbackLabelByGuid.has(entry.guid)) {
+            fallbackLabelByGuid.set(entry.guid, entry.label);
+          } else if (isReadableEntityLabel(titleFallback) && !fallbackLabelByGuid.has(entry.guid)) {
+            fallbackLabelByGuid.set(entry.guid, titleFallback);
           }
         });
       });
 
-      const termData = await fetchJson(
-        buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.entities)
+      const termLabelMap = await fetchTermLabelMap(
+        webUrl,
+        TENANT_CONFIG.termStore.sets.entities,
+        entityGuids
       );
 
       const labelMap = new Map<string, string>();
-      (termData.value || []).forEach((t: any) => {
-        const id = String(t.id).toLowerCase();
-        if (entityGuids.has(id)) {
-          const label =
-            t.labels?.find((l: any) => l.isDefault)?.name ||
-            t.labels?.[0]?.name;
-          if (label) {
-            labelMap.set(id, label);
-          }
+      Object.keys(termLabelMap).forEach(id => {
+        const label = termLabelMap[id];
+        if (label) {
+          labelMap.set(id, label);
         }
       });
 
       const list: EntitySelection[] = [];
       entityGuids.forEach(guid => {
+        const mapped = labelMap.get(guid) || '';
+        const fallback = fallbackLabelByGuid.get(guid) || '';
+        const label = isReadableEntityLabel(mapped)
+          ? mapped
+          : isReadableEntityLabel(fallback)
+            ? fallback
+            : guid;
+
         list.push({
           id: guidToItemId.get(guid),
           termGuid: guid,
-          label: labelMap.get(guid) || guid,
+          label,
           relatedClientGuid: initialEntity?.relatedClientGuid || ''
         });
       });
