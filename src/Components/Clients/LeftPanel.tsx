@@ -15,6 +15,8 @@ interface LeftPanelProps {
 interface IClientUsage {
   itemId: number;
   termGuid: string;
+  listText: string;
+  clientRaw: any;
   label: string;
   alias: string;
   title: string;
@@ -41,6 +43,45 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     if (isGuid(text)) return false;
     if (isNumeric(text)) return false;
     return true;
+  };
+
+  const extractDisplayLabel = (value: any): string => {
+    if (!value) return '';
+
+    if (typeof value === 'string') {
+      const parts = value
+        .split(';#')
+        .map(part => part.trim())
+        .filter(Boolean)
+        .filter(part => !isNumeric(part));
+
+      for (const part of parts) {
+        if (part.includes('|')) {
+          const label = part.split('|')[0]?.trim() || '';
+          if (isReadableName(label)) return label;
+        }
+      }
+
+      const firstReadable = parts.find(part => isReadableName(part) && !isGuid(part));
+      return firstReadable || '';
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const label = extractDisplayLabel(item);
+        if (isReadableName(label)) return label;
+      }
+      return '';
+    }
+
+    if (typeof value === 'object') {
+      const label = String(
+        value.Label || value.label || value.Title || value.name || value.LookupValue || ''
+      ).trim();
+      return isReadableName(label) ? label : '';
+    }
+
+    return '';
   };
 
   const parseClientTerm = (
@@ -75,7 +116,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     }
 
     if (typeof value === 'object') {
-      const guid = String(value.TermGuid || value.termGuid || '').trim();
+      const guid = String(
+        value.TermGuid || value.termGuid || value.id || value.Id || ''
+      ).trim();
       if (!guidPattern.test(guid)) {
         return null;
       }
@@ -100,8 +143,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       const withoutAliasSelect =
         `${TENANT_CONFIG.lists.clients.queries.leftPanelSelect},Title`;
 
-      const fetchListData = async (select: string): Promise<any> => {
-        const listResp = await fetch(`${listBaseUrl}?$select=${select}`, {
+      const fetchListData = async (select: string, expand?: string): Promise<any> => {
+        const expandPart = expand ? `&$expand=${expand}` : '';
+        const listResp = await fetch(`${listBaseUrl}?$select=${select}${expandPart}`, {
           headers: { Accept: 'application/json;odata=nometadata' }
         });
 
@@ -115,17 +159,55 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         return listResp.json();
       };
 
-      let listData: any;
-      try {
-        listData = await fetchListData(withAliasSelect);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes('(400)')) {
-          throw error;
-        }
+      let listData: any = null;
+      const queryAttempts: Array<{ select: string; expand?: string }> = [
+        { select: withAliasSelect },
+        { select: withoutAliasSelect },
+        { select: `${TENANT_CONFIG.lists.clients.queries.leftPanelSelect}` }
+      ];
 
-        // Some tenant schemas may not expose EntityAliases. Fallback to base columns.
-        listData = await fetchListData(withoutAliasSelect);
+      let lastListError: unknown = null;
+      for (const attempt of queryAttempts) {
+        try {
+          listData = await fetchListData(attempt.select, attempt.expand);
+          lastListError = null;
+          break;
+        } catch (error) {
+          lastListError = error;
+        }
+      }
+
+      if (!listData) {
+        throw lastListError || new Error('Unable to load client list items');
+      }
+
+      const clientFieldName = TENANT_CONFIG.lists.clients.columns.client || 'Client';
+      const renderedClientNameById = new Map<number, string>();
+      const renderedNameAttempts: Array<{ select: string; expand?: string }> = [
+        { select: 'Id,FieldValuesAsText', expand: 'FieldValuesAsText' },
+        { select: `Id,FieldValuesAsText/${clientFieldName}`, expand: 'FieldValuesAsText' }
+      ];
+
+      for (const attempt of renderedNameAttempts) {
+        try {
+          const renderedData = await fetchListData(attempt.select, attempt.expand);
+          (renderedData.value || []).forEach((row: any) => {
+            const rendered = String(
+              row?.FieldValuesAsText?.[clientFieldName] ||
+              row?.FieldValuesAsText?.Client ||
+              ''
+            ).trim();
+            if (rendered) {
+              renderedClientNameById.set(Number(row.Id), rendered);
+            }
+          });
+
+          if (renderedClientNameById.size > 0) {
+            break;
+          }
+        } catch (error) {
+          console.warn('Unable to load rendered client labels from FieldValuesAsText:', error);
+        }
       }
 
       const usedTerms: IClientUsage[] = (listData.value || [])
@@ -133,11 +215,14 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
           const term = parseClientTerm(item.Client);
           if (!term?.termGuid) return null;
 
+          const listRenderedName = String(renderedClientNameById.get(Number(item.Id)) || '').trim();
           const fallbackLabel = String(item.Title || '').trim();
           const alias = String(item.EntityAliases || '').trim();
           return {
             itemId: item.Id,
             termGuid: term.termGuid,
+            listText: listRenderedName,
+            clientRaw: item.Client,
             label: term.label || fallbackLabel,
             alias,
             title: fallbackLabel
@@ -177,11 +262,17 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
           id: u.itemId,
           label: (() => {
             const mapped = termMap.get(u.termGuid.toLowerCase()) || '';
-            if (isReadableName(mapped)) return mapped;
+            const fromListText = extractDisplayLabel(u.listText);
+            if (isReadableName(fromListText)) return fromListText;
+
+            const fromClientField = extractDisplayLabel(u.clientRaw);
+            if (isReadableName(fromClientField)) return fromClientField;
+
             if (isReadableName(u.label)) return u.label;
-            if (isReadableName(u.alias)) return u.alias;
             if (isReadableName(u.title)) return u.title;
-            return mapped || u.label || u.alias || u.title || `Client ${u.itemId}`;
+            if (isReadableName(u.alias)) return u.alias;
+            if (isReadableName(mapped)) return mapped;
+            return u.listText || u.label || u.title || u.alias || mapped || `Client ${u.itemId}`;
           })(),
           termGuid: u.termGuid
         }))

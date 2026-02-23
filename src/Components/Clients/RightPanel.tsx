@@ -44,7 +44,7 @@ const RightPanel: React.FC<RightPanelProps> = ({
         return <SummaryTab webUrl={webUrl} clientId={clientId} clientName={clientName} />;
 
       case 'Documents':
-        return <DocumentsTab webUrl={webUrl} clientId={clientId} />;
+        return <DocumentsTab webUrl={webUrl} clientId={clientId} clientName={clientName} />;
 
       case 'Tasks':
         return clientTermGuid ? (

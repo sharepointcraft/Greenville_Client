@@ -9,6 +9,7 @@ import {
 interface DocumentsTabProps {
   webUrl: string;
   clientId: number;
+  clientName?: string | null;
 }
  
 interface Document {
@@ -31,11 +32,10 @@ interface EntityTermInfo {
   groupLabels: Set<string>;
 }
 
-const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
+const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientName }) => {
   const [documents, setDocuments] = React.useState<Document[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [clientTerms, setClientTerms] = React.useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = React.useState('');
   const [activeSubTab, setActiveSubTab] = React.useState<string>(
     TENANT_CONFIG.ui.documents.clientStatusFilters[0]
@@ -143,9 +143,88 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     return result;
   };
 
+  const normalizeText = (value: string): string =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+
+  const buildClientLabelCandidates = (values: Array<string | undefined | null>): Set<string> => {
+    const candidates = new Set<string>();
+
+    values.forEach(value => {
+      const normalized = normalizeText(String(value || ''));
+      if (!normalized) return;
+      candidates.add(normalized);
+
+      const withoutSuffix = normalized
+        .replace(/\b(llc|inc|corp|corporation|ltd|lp|l\.l\.c\.)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (withoutSuffix && withoutSuffix !== normalized) {
+        candidates.add(withoutSuffix);
+      }
+    });
+
+    return candidates;
+  };
+
+  const matchesClientLabel = (
+    values: any[],
+    clientLabelCandidates: Set<string>
+  ): boolean => {
+    if (!clientLabelCandidates.size) return false;
+
+    const labels: string[] = [];
+    values.forEach(value => {
+      parseTaxonomyLabels(value).forEach(label => {
+        labels.push(normalizeText(label));
+      });
+    });
+
+    const uniqueLabels = uniqueStrings(labels);
+    if (!uniqueLabels.length) return false;
+
+    return uniqueLabels.some(label =>
+      Array.from(clientLabelCandidates).some(candidate =>
+        label === candidate || label.includes(candidate) || candidate.includes(label)
+      )
+    );
+  };
+
+  const pathMatchesClientLabel = (
+    absoluteUrl: string,
+    clientLabelCandidates: Set<string>
+  ): boolean => {
+    if (!clientLabelCandidates.size) return false;
+
+    try {
+      const decodedPath = normalizeText(decodeURIComponent(new URL(absoluteUrl).pathname));
+      return Array.from(clientLabelCandidates).some(candidate =>
+        decodedPath.includes(candidate) || candidate.includes(decodedPath)
+      );
+    } catch {
+      return false;
+    }
+  };
+
   const getCellValue = (cells: any[], key: string): string => {
     const found = cells.find((cell: any) => String(cell.Key || '').toLowerCase() === key.toLowerCase());
     return found?.Value || '';
+  };
+
+  const extractUserName = (userField: any): string => {
+    if (!userField) return 'Unknown';
+    if (typeof userField === 'string') {
+      const parts = userField.split('|');
+      if (parts.length > 1) {
+        const email = parts[parts.length - 1];
+        return email.includes('@') ? email.split('@')[0] : email;
+      }
+      return userField;
+    }
+    return String(userField);
   };
 
   const loadEntityTerms = async (guids: Set<string>): Promise<EntityTermInfo> => {
@@ -321,7 +400,9 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
     return Array.from(byUrl.values());
   };
  
-  const loadClientTerms = async (guids: Set<string>) => {
+  const loadClientTerms = async (guids: Set<string>): Promise<Record<string, string>> => {
+    if (!guids.size) return {};
+
     const resp = await fetch(
       buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.clients),
       { headers: { Accept: 'application/json' } }
@@ -339,189 +420,186 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
         if (label) map[termId] = label;
       }
     });
- 
-    setClientTerms(map);
+
+    return map;
   };
  
-  const searchDocumentsByRelatedClient = async (relatedClientGuids: Set<string>): Promise<Document[]> => {
+  const searchDocumentsByRelatedClient = async (
+    relatedClientGuids: Set<string>,
+    clientLabelCandidates: Set<string>
+  ): Promise<Document[]> => {
     const allDocuments: RawDocument[] = [];
- 
+
     try {
-      console.log('Searching for documents with RelatedClient GUIDs:', Array.from(relatedClientGuids));
       const documentPath = TENANT_CONFIG.libraries.documentCenterPath;
       const documentClass = TENANT_CONFIG.search.contentClassDocumentLibrary;
       const relatedClientTaxId = TENANT_CONFIG.search.managedProperties.relatedClientTaxId;
       const relatedClient = TENANT_CONFIG.search.managedProperties.relatedClient;
- 
-      // Method 1: Try using the SharePoint search with proper managed metadata syntax
-      // For managed metadata fields, we need to use the GUID format
-      const guidQueries = Array.from(relatedClientGuids).map(guid => `"${guid}"`).join(' OR ');
-     
-      // Try different managed property names that SharePoint might use for RelatedClient
-      const searchQueries = [
-        `${relatedClientTaxId}:(${guidQueries}) AND contentclass:${documentClass} AND path:"${documentPath}"`,
-        `${relatedClient}:(${guidQueries}) AND contentclass:${documentClass} AND path:"${documentPath}"`,
-        `"${Array.from(relatedClientGuids).join('" OR "')}" AND contentclass:${documentClass} AND path:"${documentPath}"`
-      ];
- 
-      for (const query of searchQueries) {
-        console.log('Trying search query:', query);
-       
+      const relatedEntity = TENANT_CONFIG.search.managedProperties.relatedEntity;
+      const relatedEntityTaxId = TENANT_CONFIG.search.managedProperties.relatedEntityTaxId;
+      const relatedEntityTaxIdFallback = TENANT_CONFIG.search.managedProperties.relatedEntityTaxIdFallback;
+
+      const guidTerms = Array.from(relatedClientGuids).map(guid => `"${guid}"`);
+      const labelTerms = Array.from(clientLabelCandidates).map(label => {
+        const escapedLabel = label.replace(/"/g, '""');
+        return `"${escapedLabel}"`;
+      });
+
+      const queryCandidates: string[] = [];
+      const scopedBase = `contentclass:${documentClass} AND path:"${documentPath}"`;
+      const unscopedBase = `contentclass:${documentClass}`;
+
+      if (guidTerms.length) {
+        const guidQuery = guidTerms.join(' OR ');
+        queryCandidates.push(`${relatedClientTaxId}:(${guidQuery}) AND ${scopedBase}`);
+        queryCandidates.push(`${relatedClient}:(${guidQuery}) AND ${scopedBase}`);
+        queryCandidates.push(`(${guidQuery}) AND ${scopedBase}`);
+        queryCandidates.push(`${relatedClientTaxId}:(${guidQuery}) AND ${unscopedBase}`);
+        queryCandidates.push(`${relatedClient}:(${guidQuery}) AND ${unscopedBase}`);
+        queryCandidates.push(`(${guidQuery}) AND ${unscopedBase}`);
+      }
+
+      if (labelTerms.length) {
+        const labelQuery = labelTerms.join(' OR ');
+        queryCandidates.push(`${relatedClient}:(${labelQuery}) AND ${scopedBase}`);
+        queryCandidates.push(`(${labelQuery}) AND ${scopedBase}`);
+        queryCandidates.push(`${relatedClient}:(${labelQuery}) AND ${unscopedBase}`);
+        queryCandidates.push(`(${labelQuery}) AND ${unscopedBase}`);
+      }
+
+      const searchSelectProperties = [
+        TENANT_CONFIG.search.selectProperties.documents,
+        relatedClientTaxId,
+        relatedClient
+      ].join(',');
+
+      for (const query of queryCandidates) {
         try {
           const searchResponse = await fetch(
-              `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=${TENANT_CONFIG.search.rowLimitDefault}&selectproperties='${TENANT_CONFIG.search.selectProperties.documents}'`,
-              { headers: { Accept: 'application/json;odata=nometadata' } }
-            );
- 
-          if (searchResponse.ok) {
-            const searchData = await searchResponse.json();
-            const results = searchData.PrimaryQueryResult?.RelevantResults?.Table?.Rows || [];
-           
-            console.log(`Search query "${query}" returned ${results.length} results`);
- 
-            results.forEach((row: any) => {
-              const cells = row.Cells;
-              const title = getCellValue(cells, 'Title');
-              const path = getCellValue(cells, 'Path');
-              const lastModified = getCellValue(cells, 'LastModifiedTime');
-              const author = getCellValue(cells, 'Author');
-              const editor = getCellValue(cells, 'Editor');
-              const modifiedBy = getCellValue(cells, 'ModifiedBy');
-              const relatedEntity = getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntity);
-              const relatedEntityTaxId =
-                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxId) ||
-                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxIdFallback);
- 
-              // Extract user name from SharePoint user field format
-              const extractUserName = (userField: any): string => {
-                if (!userField) return 'Unknown';
-                if (typeof userField === 'string') {
-                  // SharePoint user fields are often in format "i:0#.f|membership|user@domain.com"
-                  const parts = userField.split('|');
-                  if (parts.length > 1) {
-                    const email = parts[parts.length - 1];
-                    return email.includes('@') ? email.split('@')[0] : email;
-                  }
-                  return userField;
-                }
-                return userField;
-              };
- 
-              const finalModifiedBy = extractUserName(modifiedBy || editor || author);
- 
-              if (title && path) {
-                const pathParts = path.split('/');
-                const libraryName = pathParts[pathParts.length - 2] || 'Unknown';
- 
-                allDocuments.push({
-                  name: title,
-                  activity: libraryName,
-                  entity: '',
-                  status: '',
-                  modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
-                  modifiedBy: finalModifiedBy,
-                  absoluteUrl: path,
-                  relatedEntityValues: [relatedEntity, relatedEntityTaxId].filter(Boolean)
-                });
-              }
-            });
- 
-            if (allDocuments.length > 0) {
-              break; // Found documents, no need to try other queries
+            `${webUrl}/_api/search/query?querytext='${encodeURIComponent(query)}'&rowlimit=${TENANT_CONFIG.search.rowLimitDefault}&selectproperties='${searchSelectProperties}'`,
+            { headers: { Accept: 'application/json;odata=nometadata' } }
+          );
+
+          if (!searchResponse.ok) {
+            continue;
+          }
+
+          const searchData = await searchResponse.json();
+          const results = searchData.PrimaryQueryResult?.RelevantResults?.Table?.Rows || [];
+
+          results.forEach((row: any) => {
+            const cells = row.Cells;
+            const title = getCellValue(cells, 'Title');
+            const path = getCellValue(cells, 'Path');
+            const lastModified = getCellValue(cells, 'LastModifiedTime');
+            const author = getCellValue(cells, 'Author');
+            const editor = getCellValue(cells, 'Editor');
+            const modifiedBy = getCellValue(cells, 'ModifiedBy');
+            const relatedEntityValue = getCellValue(cells, relatedEntity);
+            const relatedEntityTaxIdValue =
+              getCellValue(cells, relatedEntityTaxId) ||
+              getCellValue(cells, relatedEntityTaxIdFallback);
+
+            if (title && path) {
+              const pathParts = path.split('/');
+              const libraryName = pathParts[pathParts.length - 2] || 'Unknown';
+
+              allDocuments.push({
+                name: title,
+                activity: libraryName,
+                entity: '',
+                status: '',
+                modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
+                modifiedBy: extractUserName(modifiedBy || editor || author),
+                absoluteUrl: path,
+                relatedEntityValues: [relatedEntityValue, relatedEntityTaxIdValue].filter(Boolean)
+              });
             }
-          } else {
-            console.log(`Search query failed with status: ${searchResponse.status}`);
+          });
+
+          if (allDocuments.length > 0) {
+            break;
           }
         } catch (queryError) {
-          console.log(`Search query failed:`, queryError);
+          console.warn('Client documents query failed', queryError);
         }
       }
- 
-      // Method 2: If search doesn't work, try a direct approach using the document center site
+
       if (allDocuments.length === 0) {
-        console.log('Search API did not return results, trying direct approach...');
-       
-        // Try to get all documents from Prod-docCenter and filter client-side
+        const fallbackSelectProperties = [
+          TENANT_CONFIG.search.selectProperties.documentsWithRelatedClient,
+          relatedClient
+        ].join(',');
+
         try {
           const allDocsResponse = await fetch(
-              `${webUrl}/_api/search/query?querytext='contentclass:${documentClass} AND path:"${documentPath}"'&rowlimit=${TENANT_CONFIG.search.rowLimitExpanded}&selectproperties='${TENANT_CONFIG.search.selectProperties.documentsWithRelatedClient}'`,
-              { headers: { Accept: 'application/json;odata=nometadata' } }
-            );
- 
+            `${webUrl}/_api/search/query?querytext='contentclass:${documentClass} AND path:"${documentPath}"'&rowlimit=${TENANT_CONFIG.search.rowLimitExpanded}&selectproperties='${fallbackSelectProperties}'`,
+            { headers: { Accept: 'application/json;odata=nometadata' } }
+          );
+
           if (allDocsResponse.ok) {
             const allDocsData = await allDocsResponse.json();
             const allResults = allDocsData.PrimaryQueryResult?.RelevantResults?.Table?.Rows || [];
-           
-            console.log(`Found ${allResults.length} total documents in Prod-docCenter`);
- 
+
             allResults.forEach((row: any) => {
               const cells = row.Cells;
               const title = getCellValue(cells, 'Title');
               const path = getCellValue(cells, 'Path');
               const lastModified = getCellValue(cells, 'LastModifiedTime');
-              const relatedClientTaxId = getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedClientTaxId);
-              const relatedEntity = getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntity);
-              const relatedEntityTaxId =
-                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxId) ||
-                getCellValue(cells, TENANT_CONFIG.search.managedProperties.relatedEntityTaxIdFallback);
+              const relatedClientTaxIdValue = getCellValue(cells, relatedClientTaxId);
+              const relatedClientValue = getCellValue(cells, relatedClient);
+              const relatedEntityValue = getCellValue(cells, relatedEntity);
+              const relatedEntityTaxIdValue =
+                getCellValue(cells, relatedEntityTaxId) ||
+                getCellValue(cells, relatedEntityTaxIdFallback);
               const author = getCellValue(cells, 'Author');
               const editor = getCellValue(cells, 'Editor');
               const modifiedBy = getCellValue(cells, 'ModifiedBy');
- 
-              // Extract user name from SharePoint user field format
-              const extractUserName = (userField: any): string => {
-                if (!userField) return 'Unknown';
-                if (typeof userField === 'string') {
-                  // SharePoint user fields are often in format "i:0#.f|membership|user@domain.com"
-                  const parts = userField.split('|');
-                  if (parts.length > 1) {
-                    const email = parts[parts.length - 1];
-                    return email.includes('@') ? email.split('@')[0] : email;
-                  }
-                  return userField;
-                }
-                return userField;
-              };
- 
-              const finalModifiedBy = extractUserName(modifiedBy || editor || author);
 
-              // Check if this document has any of our target RelatedClient GUIDs
-              if (title && path && relatedClientTaxId) {
-                const documentGuids = new Set<string>();
-                collectTermGuids(relatedClientTaxId, documentGuids);
-                const hasMatch = Array.from(documentGuids).some(docGuid => relatedClientGuids.has(docGuid));
-
-                if (hasMatch) {
-                  const pathParts = path.split('/');
-                  const libraryName = pathParts[pathParts.length - 2] || 'Unknown';
-
-                  allDocuments.push({
-                    name: title,
-                    activity: libraryName,
-                    entity: '',
-                    status: '',
-                    modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
-                    modifiedBy: finalModifiedBy,
-                    absoluteUrl: path,
-                    relatedEntityValues: [relatedEntity, relatedEntityTaxId].filter(Boolean)
-                  });
-                }
+              if (!title || !path) {
+                return;
               }
+
+              const documentGuids = new Set<string>();
+              collectTermGuids(relatedClientTaxIdValue, documentGuids);
+              collectTermGuids(relatedClientValue, documentGuids);
+
+              const hasGuidMatch = Array.from(documentGuids).some(docGuid => relatedClientGuids.has(docGuid));
+              const hasLabelMatch = matchesClientLabel(
+                [relatedClientTaxIdValue, relatedClientValue],
+                clientLabelCandidates
+              );
+              const hasPathLabelMatch = pathMatchesClientLabel(path, clientLabelCandidates);
+
+              if (!hasGuidMatch && !hasLabelMatch && !hasPathLabelMatch) {
+                return;
+              }
+
+              const pathParts = path.split('/');
+              const libraryName = pathParts[pathParts.length - 2] || 'Unknown';
+
+              allDocuments.push({
+                name: title,
+                activity: libraryName,
+                entity: '',
+                status: '',
+                modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
+                modifiedBy: extractUserName(modifiedBy || editor || author),
+                absoluteUrl: path,
+                relatedEntityValues: [relatedEntityValue, relatedEntityTaxIdValue].filter(Boolean)
+              });
             });
           }
         } catch (directError) {
-          console.error('Direct approach failed:', directError);
+          console.error('Client documents fallback query failed', directError);
         }
       }
- 
     } catch (error) {
       console.error('Error searching documents:', error);
     }
- 
+
     const dedupedDocuments = dedupeDocuments(allDocuments);
-    const documentsWithEntity = await enrichDocumentsWithEntity(dedupedDocuments);
-    console.log('Final documents found:', documentsWithEntity);
-    return documentsWithEntity;
+    return enrichDocumentsWithEntity(dedupedDocuments);
   };
 
   const loadDocuments = async () => {
@@ -529,11 +607,12 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
       setLoading(true);
       setError(null);
 
-      console.log('Loading documents for clientId:', clientId);
+      const relatedClientField = TENANT_CONFIG.lists.clients.columns.relatedClient || 'RelatedClient';
+      const clientField = TENANT_CONFIG.lists.clients.columns.client || 'Client';
+      const clientSelect = `${relatedClientField},${clientField},Title`;
 
-      // Step 1: Get the client item with RelatedClient field
       const clientResponse = await fetch(
-        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.clients.title)}(${clientId})?$select=${TENANT_CONFIG.lists.clients.queries.relatedClientSelect}`,
+        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.clients.title)}(${clientId})?$select=${clientSelect}`,
         { headers: { Accept: 'application/json;odata=nometadata' } }
       );
 
@@ -542,28 +621,32 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
       }
 
       const clientData = await clientResponse.json();
-      console.log('Client data:', clientData);
-      
-      // Extract RelatedClient term GUIDs
       const relatedClientGuids = new Set<string>();
-      collectTermGuids(clientData.RelatedClient, relatedClientGuids);
+      collectTermGuids(clientData[relatedClientField], relatedClientGuids);
 
-      console.log('RelatedClient GUIDs:', Array.from(relatedClientGuids));
+      const relatedClientLabelsFromItem = [
+        ...parseTaxonomyLabels(clientData[relatedClientField]),
+        ...parseTaxonomyLabels(clientData[clientField])
+      ];
 
-      if (relatedClientGuids.size === 0) {
-        console.log('No RelatedClient GUIDs found for this client');
+      const clientTermMap = await loadClientTerms(relatedClientGuids);
+      const clientTermLabels = Object.keys(clientTermMap).map(key => clientTermMap[key]);
+      const clientLabelCandidates = buildClientLabelCandidates([
+        clientName,
+        clientData.Title,
+        ...relatedClientLabelsFromItem,
+        ...clientTermLabels
+      ]);
+
+      if (relatedClientGuids.size === 0 && clientLabelCandidates.size === 0) {
         setDocuments([]);
-        setLoading(false);
         return;
       }
 
-      // Step 2: Load client terms to get the actual names
-      await loadClientTerms(relatedClientGuids);
-      console.log('Client terms loaded:', clientTerms);
-
-      // Step 3: Search for documents across all libraries in Prod-docCenter
-      const foundDocuments = await searchDocumentsByRelatedClient(relatedClientGuids);
-      console.log('Found documents:', foundDocuments);
+      const foundDocuments = await searchDocumentsByRelatedClient(
+        relatedClientGuids,
+        clientLabelCandidates
+      );
       setDocuments(foundDocuments);
 
     } catch (err) {
@@ -576,7 +659,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId }) => {
 
   React.useEffect(() => {
     void loadDocuments();
-  }, [clientId]);
+  }, [clientId, clientName, webUrl]);
  
 const getStatusClass = (status: string): string => {
   const statusMap: Record<string, string> = {
