@@ -4,6 +4,7 @@ import type { IGreenVilleClientProps } from './IGreenVilleClientProps';
 import EntityView from '../../../Components/Entity/EntityView';
 import ClientView from '../../../Components/Clients/ClientView';
 import type { EntitySelection } from '../../../Components/Clients/RightPanelTabs/EntitiesTab';
+import { TENANT_CONFIG } from '../../../config/tenantConfig';
 
 interface IGreenVilleClientState {
   selectedClientId: number | null;
@@ -81,6 +82,7 @@ export default class GreenVilleClient extends React.Component<
     } = this.state;
 
     const showEntity = viewMode === 'entity';
+    const [clientsLabel, entityLabel] = TENANT_CONFIG.ui.tabs.top;
 
     return (
       <div className={styles.root}>
@@ -90,14 +92,14 @@ export default class GreenVilleClient extends React.Component<
             className={`${styles.topTab} ${viewMode === 'clients' ? styles.topTabActive : ''}`}
             onClick={() => this.setState({ viewMode: 'clients' })}
           >
-            Clients
+            {clientsLabel}
           </button>
           <button
             type="button"
             className={`${styles.topTab} ${viewMode === 'entity' ? styles.topTabActive : ''}`}
             onClick={() => this.setState({ viewMode: 'entity' })}
           >
-            Entity
+            {entityLabel}
           </button>
         </div>
 

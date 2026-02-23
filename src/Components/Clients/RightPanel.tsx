@@ -4,9 +4,10 @@ import SummaryTab from './RightPanelTabs/SummaryTab';
 import DocumentsTab from './RightPanelTabs/DocumentsTab';
 import TasksTab from './RightPanelTabs/TasksTab';
 import EntitiesTab, { EntitySelection } from './RightPanelTabs/EntitiesTab';
+import { TENANT_CONFIG, type ClientPanelTab } from '../../config/tenantConfig';
 
-const tabs = ['Summary', 'Documents', 'Tasks', 'Entities'] as const;
-type TabKey = (typeof tabs)[number];
+const tabs = TENANT_CONFIG.ui.tabs.clientPanel;
+type TabKey = ClientPanelTab;
 
 interface RightPanelProps {
   webUrl: string;
@@ -23,7 +24,9 @@ const RightPanel: React.FC<RightPanelProps> = ({
   clientName, // NEW: Destructured clientName
   onEntityOpen 
 }) => {
-  const [activeTab, setActiveTab] = React.useState<TabKey>('Summary');
+  const [activeTab, setActiveTab] = React.useState<TabKey>(
+    TENANT_CONFIG.ui.tabs.clientPanel[0]
+  );
 
   if (!clientId) {
     return (

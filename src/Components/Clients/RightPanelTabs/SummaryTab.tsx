@@ -1,9 +1,10 @@
 import * as React from 'react';
 import styles from './SummaryTab.module.scss';
-
-const TERM_GROUP_ID = 'cadcb7a6-fcde-4b81-a893-6071c3dd2cbb';
-const CLIENT_TERM_SET_ID = 'e15c7ba0-e449-437f-bb70-b35bc582edda';
-const ENTITY_TERM_SET_ID = '63f8136b-40cf-4d43-890a-73d4959c5a68';
+import {
+  TENANT_CONFIG,
+  buildListItemsApiUrl,
+  buildTermSetTermsApiUrl
+} from '../../../config/tenantConfig';
 
 interface SummaryTabProps {
   webUrl: string;
@@ -170,7 +171,7 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
       return;
     }
     const resp = await fetch(
-      `${webUrl}/_api/v2.1/termstore/groups('${TERM_GROUP_ID}')/sets('${setId}')/terms`,
+      buildTermSetTermsApiUrl(webUrl, setId),
       { headers: { Accept: 'application/json' } }
     );
 
@@ -196,9 +197,9 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
     setItem(null); 
 
     const resp = await fetch(
-      `${webUrl}/_api/web/lists/getByTitle('Clients')/items(${clientId})?` +
-        `$select=*,Children/Id,Children/Title,Siblings/Id,Siblings/Title,Parents/Id,Parents/Title&` +
-        `$expand=Children,Siblings,Parents`,
+      `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.clients.title)}(${clientId})?` +
+        `$select=${TENANT_CONFIG.lists.clients.queries.summarySelect}&` +
+        `$expand=${TENANT_CONFIG.lists.clients.queries.summaryExpand}`,
       { headers: { Accept: 'application/json;odata=nometadata' } }
     );
 
@@ -215,8 +216,8 @@ const SummaryTab: React.FC<SummaryTabProps> = ({ webUrl, clientId }) => {
 
     // 2. Wait for all taxonomy labels to download fully
     await Promise.all([
-      loadTermSet(clientGuids, CLIENT_TERM_SET_ID, setClientTerms),
-      loadTermSet(entityGuids, ENTITY_TERM_SET_ID, setEntityTerms)
+      loadTermSet(clientGuids, TENANT_CONFIG.termStore.sets.clients, setClientTerms),
+      loadTermSet(entityGuids, TENANT_CONFIG.termStore.sets.entities, setEntityTerms)
     ]);
 
     // 3. Now that everything is 100% loaded, render the component. No more GUID flashing!
