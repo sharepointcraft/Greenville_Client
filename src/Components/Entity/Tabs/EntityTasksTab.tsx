@@ -39,18 +39,41 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
         .filter(v => v.includes('|'))
         .map(v => v.split('|')[0])
         .filter(Boolean);
-      return labels.join(', ') || value;
+      if (labels.length) {
+        return labels.join(', ');
+      }
+
+      const raw = value.trim();
+      if (!raw) return '—';
+      if (TENANT_CONFIG.patterns.guidExact.test(raw)) return '—';
+
+      const guidMatches = raw.match(TENANT_CONFIG.patterns.guid) || [];
+      if (guidMatches.length) {
+        const leftover = raw
+          .replace(TENANT_CONFIG.patterns.guid, '')
+          .replace(/[|;,#]/g, '')
+          .trim();
+        if (!leftover) {
+          return '—';
+        }
+      }
+
+      return raw;
     }
 
     if (Array.isArray(value)) {
       const labels = value
         .map(v => v?.Label || v?.label || v?.Title || v?.TermGuid)
-        .filter(Boolean);
+        .filter((v: any) => Boolean(v) && !TENANT_CONFIG.patterns.guidExact.test(String(v).trim()));
       return labels.join(', ') || '—';
     }
 
     if (typeof value === 'object') {
-      return value.Label || value.label || value.Title || value.TermGuid || '—';
+      const label = value.Label || value.label || value.Title || value.title || value.name;
+      if (label && !TENANT_CONFIG.patterns.guidExact.test(String(label).trim())) {
+        return String(label);
+      }
+      return '—';
     }
 
     return String(value);
@@ -60,13 +83,8 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
     if (!value) return;
 
     if (typeof value === 'string') {
-      value
-        .split(';#')
-        .filter(v => v.includes('|'))
-        .forEach(v => {
-          const guid = v.split('|')[1];
-          if (guid) set.add(guid.toLowerCase());
-        });
+      const matches = value.match(TENANT_CONFIG.patterns.guid);
+      (matches || []).forEach(guid => set.add(guid.toLowerCase()));
       return;
     }
 
@@ -75,23 +93,106 @@ const EntityTasksTab: React.FC<EntityTasksTabProps> = ({ webUrl, entity }) => {
       return;
     }
 
-    if (typeof value === 'object' && value.TermGuid) {
-      set.add(String(value.TermGuid).toLowerCase());
+    if (typeof value === 'object') {
+      if (Array.isArray(value.results)) {
+        value.results.forEach((entry: any) => collectTermGuids(entry, set));
+      }
+
+      const guid = value.TermGuid || value.termGuid || value.Id || value.id;
+      if (guid && typeof guid === 'string') {
+        const matches = guid.match(TENANT_CONFIG.patterns.guid);
+        (matches || []).forEach(matchedGuid => set.add(matchedGuid.toLowerCase()));
+      }
     }
+  };
+
+  const collectInlineTermLabels = (value: any, map: Record<string, string>): void => {
+    if (!value) return;
+
+    if (typeof value === 'string') {
+      value
+        .split(';#')
+        .filter(v => v.includes('|'))
+        .forEach(v => {
+          const parts = v.split('|');
+          const label = (parts[0] || '').trim();
+          const guidMatches = (parts[1] || '').match(TENANT_CONFIG.patterns.guid);
+          (guidMatches || []).forEach(guid => {
+            if (label && !TENANT_CONFIG.patterns.guidExact.test(label)) {
+              map[guid.toLowerCase()] = label;
+            }
+          });
+        });
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(v => collectInlineTermLabels(v, map));
+      return;
+    }
+
+    if (typeof value === 'object') {
+      if (Array.isArray(value.results)) {
+        value.results.forEach((entry: any) => collectInlineTermLabels(entry, map));
+      }
+
+      const guid = value.TermGuid || value.termGuid || value.Id || value.id;
+      const label = value.Label || value.label || value.Title || value.title || value.name;
+      if (guid && typeof guid === 'string' && label && !TENANT_CONFIG.patterns.guidExact.test(String(label).trim())) {
+        const guidMatches = guid.match(TENANT_CONFIG.patterns.guid);
+        (guidMatches || []).forEach(matchedGuid => {
+          map[matchedGuid.toLowerCase()] = String(label).trim();
+        });
+      }
+    }
+  };
+
+  const uniqueLabels = (values: string[]): string[] => {
+    const seen = new Set<string>();
+    const output: string[] = [];
+    values.forEach(value => {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      output.push(trimmed);
+    });
+    return output;
+  };
+
+  const getEntityLabels = (value: any): string[] => {
+    const guids = new Set<string>();
+    const inlineLabels: Record<string, string> = {};
+    collectTermGuids(value, guids);
+    collectInlineTermLabels(value, inlineLabels);
+
+    const labelsFromGuids = Array.from(guids)
+      .map(guid => entityTerms[guid] || inlineLabels[guid] || '')
+      .filter(label => Boolean(label) && !TENANT_CONFIG.patterns.guidExact.test(String(label).trim()))
+      .map(label => String(label).trim());
+
+    if (labelsFromGuids.length) {
+      return uniqueLabels(labelsFromGuids);
+    }
+
+    const parsed = parseTaxonomyLabel(value);
+    if (parsed === '—') {
+      return [];
+    }
+
+    return uniqueLabels(
+      parsed
+        .split(',')
+        .map(part => part.trim())
+        .filter(part => part && !TENANT_CONFIG.patterns.guidExact.test(part))
+    );
   };
 
   const renderEntity = (task: any): string => {
     const raw = task.RelatedEntity || task.ReletedEntity;
-    const guids = new Set<string>();
-    collectTermGuids(raw, guids);
-
-    if (!guids.size) {
-      return parseTaxonomyLabel(raw);
-    }
-
-    return Array.from(guids)
-      .map(g => entityTerms[g] || g)
-      .join(', ');
+    const labels = getEntityLabels(raw);
+    return labels.length ? labels.join(', ') : '—';
   };
 
   const renderAssignedTo = (value: any): string => {

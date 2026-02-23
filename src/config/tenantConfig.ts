@@ -242,6 +242,57 @@ const getODataNextLink = (payload: any): string | undefined => {
   );
 };
 
+const extractTermLabelFromPayload = (payload: any): string | undefined => {
+  if (!payload) return undefined;
+
+  const getDefaultLabel = (term: any): string | undefined =>
+    term?.labels?.find((l: any) => l?.isDefault)?.name || term?.labels?.[0]?.name;
+
+  if (payload.id) {
+    return getDefaultLabel(payload);
+  }
+
+  if (Array.isArray(payload.value) && payload.value.length) {
+    return getDefaultLabel(payload.value[0]);
+  }
+
+  return undefined;
+};
+
+const fetchTermLabelByGuid = async (
+  webUrl: string,
+  termSetId: string,
+  guid: string
+): Promise<string | undefined> => {
+  const apiWebUrl = resolveApiWebUrl(webUrl);
+  const endpoints = [
+    `${apiWebUrl}/_api/v2.1/termstore/groups('${TENANT_CONFIG.termStore.groupId}')/sets('${termSetId}')/terms('${guid}')`,
+    `${apiWebUrl}/_api/v2.1/termstore/sets('${termSetId}')/terms('${guid}')`
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        headers: { Accept: 'application/json' }
+      });
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const payload = await response.json();
+      const label = extractTermLabelFromPayload(payload);
+      if (label) {
+        return label;
+      }
+    } catch {
+      // Try next endpoint.
+    }
+  }
+
+  return undefined;
+};
+
 export const fetchTermLabelMap = async (
   webUrl: string,
   termSetId: string,
@@ -289,6 +340,20 @@ export const fetchTermLabelMap = async (
     }
 
     url = getODataNextLink(payload);
+  }
+
+  if (wanted && wanted.size) {
+    const unresolvedGuids = Array.from(wanted).filter(guid => !labels[guid]);
+    if (unresolvedGuids.length) {
+      await Promise.all(
+        unresolvedGuids.map(async guid => {
+          const label = await fetchTermLabelByGuid(webUrl, termSetId, guid);
+          if (label) {
+            labels[guid] = String(label);
+          }
+        })
+      );
+    }
   }
 
   return labels;
