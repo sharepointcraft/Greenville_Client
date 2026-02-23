@@ -3,7 +3,7 @@ import styles from './LeftPanel.module.scss';
 import {
   TENANT_CONFIG,
   buildListItemsApiUrl,
-  buildTermSetTermsApiUrl
+  fetchTermLabelMap
 } from '../../config/tenantConfig';
 
 interface LeftPanelProps {
@@ -15,6 +15,9 @@ interface LeftPanelProps {
 interface IClientUsage {
   itemId: number;
   termGuid: string;
+  label: string;
+  alias: string;
+  title: string;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({
@@ -27,22 +30,117 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   >([]);
   const [showAddPopup, setShowAddPopup] = React.useState(false);
 
+  const isGuid = (value: string): boolean =>
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value.trim());
+
+  const isNumeric = (value: string): boolean => /^\d+$/.test(value.trim());
+
+  const isReadableName = (value?: string): boolean => {
+    const text = String(value || '').trim();
+    if (!text) return false;
+    if (isGuid(text)) return false;
+    if (isNumeric(text)) return false;
+    return true;
+  };
+
+  const parseClientTerm = (
+    value: any
+  ): { termGuid: string; label: string } | null => {
+    if (!value) return null;
+
+    const guidPattern = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/;
+
+    if (typeof value === 'string') {
+      const guidMatch = value.match(guidPattern);
+      if (!guidMatch?.[0]) return null;
+
+      const guid = guidMatch[0];
+      const labelMatch = value.match(/([^|;#]+)\|[0-9a-fA-F-]{36}/);
+      const label = (labelMatch?.[1] || '').trim();
+
+      return {
+        termGuid: guid,
+        label
+      };
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const parsed = parseClientTerm(item);
+        if (parsed) {
+          return parsed;
+        }
+      }
+      return null;
+    }
+
+    if (typeof value === 'object') {
+      const guid = String(value.TermGuid || value.termGuid || '').trim();
+      if (!guidPattern.test(guid)) {
+        return null;
+      }
+
+      return {
+        termGuid: guid,
+        label: String(value.Label || value.label || value.Title || value.name || '').trim()
+      };
+    }
+
+    return null;
+  };
+
   const loadClientsFromTerms = async () => {
     try {
-      const listResp = await fetch(
-        `${buildListItemsApiUrl(webUrl, TENANT_CONFIG.lists.clients.title)}?$select=${TENANT_CONFIG.lists.clients.queries.leftPanelSelect}`,
-        { headers: { Accept: 'application/json;odata=nometadata' } }
+      const listBaseUrl = buildListItemsApiUrl(
+        webUrl,
+        TENANT_CONFIG.lists.clients.title
       );
+      const withAliasSelect =
+        `${TENANT_CONFIG.lists.clients.queries.leftPanelSelect},Title,EntityAliases`;
+      const withoutAliasSelect =
+        `${TENANT_CONFIG.lists.clients.queries.leftPanelSelect},Title`;
 
-      const listData = await listResp.json();
+      const fetchListData = async (select: string): Promise<any> => {
+        const listResp = await fetch(`${listBaseUrl}?$select=${select}`, {
+          headers: { Accept: 'application/json;odata=nometadata' }
+        });
+
+        if (!listResp.ok) {
+          const detail = await listResp.text();
+          throw new Error(
+            `Clients list request failed (${listResp.status}): ${detail || listResp.statusText}`
+          );
+        }
+
+        return listResp.json();
+      };
+
+      let listData: any;
+      try {
+        listData = await fetchListData(withAliasSelect);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes('(400)')) {
+          throw error;
+        }
+
+        // Some tenant schemas may not expose EntityAliases. Fallback to base columns.
+        listData = await fetchListData(withoutAliasSelect);
+      }
 
       const usedTerms: IClientUsage[] = (listData.value || [])
         .map((item: any) => {
-          const term = item.Client;
-          if (!term?.TermGuid) return null;
+          const term = parseClientTerm(item.Client);
+          if (!term?.termGuid) return null;
+
+          const fallbackLabel = String(item.Title || '').trim();
+          const alias = String(item.EntityAliases || '').trim();
           return {
             itemId: item.Id,
-            termGuid: term.TermGuid
+            termGuid: term.termGuid,
+            label: term.label || fallbackLabel,
+            alias,
+            title: fallbackLabel
           };
         })
         .filter(Boolean);
@@ -52,23 +150,39 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         return;
       }
 
-      const termResp = await fetch(
-        buildTermSetTermsApiUrl(webUrl, TENANT_CONFIG.termStore.sets.clients),
-        { headers: { Accept: 'application/json' } }
-      );
-
-      const termData = await termResp.json();
-
       const termMap = new Map<string, string>();
-      termData.value.forEach((t: any) => {
-        termMap.set(t.id.toLowerCase(), t.labels[0].name);
-      });
+
+      try {
+        const targetGuids = new Set<string>(
+          usedTerms.map(term => term.termGuid.toLowerCase())
+        );
+        const labels = await fetchTermLabelMap(
+          webUrl,
+          TENANT_CONFIG.termStore.sets.clients,
+          targetGuids
+        );
+
+        Object.keys(labels).forEach(id => {
+          const label = labels[id];
+          if (label) {
+            termMap.set(id, label);
+          }
+        });
+      } catch (err) {
+        console.warn('Client term-store lookup error:', err);
+      }
 
       const finalItems = usedTerms
-        .filter(u => termMap.has(u.termGuid.toLowerCase()))
         .map(u => ({
           id: u.itemId,
-          label: termMap.get(u.termGuid.toLowerCase())!,
+          label: (() => {
+            const mapped = termMap.get(u.termGuid.toLowerCase()) || '';
+            if (isReadableName(mapped)) return mapped;
+            if (isReadableName(u.label)) return u.label;
+            if (isReadableName(u.alias)) return u.alias;
+            if (isReadableName(u.title)) return u.title;
+            return mapped || u.label || u.alias || u.title || `Client ${u.itemId}`;
+          })(),
           termGuid: u.termGuid
         }))
         .sort((a, b) => a.label.localeCompare(b.label));

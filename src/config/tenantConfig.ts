@@ -1,4 +1,6 @@
-export const TENANT_CONFIG = {
+const isGreenville = typeof window !== 'undefined' && window.location.hostname.includes('greenvilleptrs');
+
+const REALITY_CRAFT = {
   sites: {
     prodHome: 'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-Home',
     docCenter: 'https://realitycraftprivatelimited.sharepoint.com/sites/Prod-docCenter'
@@ -86,7 +88,7 @@ export const TENANT_CONFIG = {
       },
       queries: {
         listSelect:
-          'Id,Title,Status,Priority,DueDate1,RelatedClient,RelatedEntity,AssignedTo1/Title,AssignedTo1/EMail',
+          'Id,Title,Status,Priority,DueDate1,RelatedClient,RelatedEntity,AssignedTo1/Title',
         listExpand: 'AssignedTo1'
       }
     }
@@ -161,11 +163,136 @@ export const TENANT_CONFIG = {
   }
 } as const;
 
+const GREENVILLE = {
+  ...REALITY_CRAFT,
+  sites: {
+    prodHome: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home',
+    docCenter: 'https://greenvilleptrs.sharepoint.com/sites/Prod-DocCenter'
+  },
+  termStore: {
+    groupId: '35fa5400-bc14-40e7-97f0-71b8ab5d5409',
+    sets: {
+      clients: 'c303ee9c-f01a-40d9-8ef8-18778e0ecc13',
+      entities: '29b96c62-c253-46e1-8d72-41b0d2ab86ec',
+      banks: '6be8631f-bec1-46ba-b4cf-2e3704aeafbb'
+    }
+  },
+  lists: {
+    ...REALITY_CRAFT.lists,
+    clients: {
+      ...REALITY_CRAFT.lists.clients,
+      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Clients/AllItems.aspx',
+      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7BD055FA58-F79D-496A-A914-35E21B3675A9%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FClients&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FClients%2FAllItems.aspx&ContentTypeId=0x0100C441AE8AC3A035499BD4A40EF481581600FD2764DABCAC504483BC664D29A7796D'
+    },
+    entities: {
+      ...REALITY_CRAFT.lists.entities,
+      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Entities/AllItems.aspx',
+      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B5B64CCEF-5176-4D1E-AFD2-BF67366BEA81%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FEntities&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FEntities%2FAllItems.aspx&ContentTypeId=0x010005A065D7CC77D146A540E9E94E26F332009595D5DD684D9F47BDF0DE601379CD13'
+    },
+    tasks: {
+      ...REALITY_CRAFT.lists.tasks,
+      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Tasks/AllItems.aspx',
+      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B6CD2A192-B82C-4304-A936-F400D0E66FEC%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FTasks&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FTasks%2FAllItems.aspx&ContentTypeId=0x0100A2DB78381F4D3541900EBE1DE131DD3E0064E6958DA895BF44AC2862F2A62CFE11'
+    }
+  },
+  libraries: {
+    ...REALITY_CRAFT.libraries,
+    documentCenterPath: 'https://greenvilleptrs.sharepoint.com/sites/Prod-DocCenter/*'
+  }
+} as const;
+
+export const TENANT_CONFIG = isGreenville ? GREENVILLE : REALITY_CRAFT;
+
+const resolveApiWebUrl = (webUrl: string): string => {
+  const configured = TENANT_CONFIG.sites.prodHome.replace(/\/+$/, '');
+  if (!webUrl) {
+    return configured;
+  }
+
+  try {
+    const current = new URL(webUrl);
+    const target = new URL(configured);
+
+    if (current.host.toLowerCase() !== target.host.toLowerCase()) {
+      return configured;
+    }
+  } catch {
+    return configured;
+  }
+
+  return configured;
+};
+
 export const buildListItemsApiUrl = (webUrl: string, listTitle: string): string =>
-  `${webUrl}/_api/web/lists/getByTitle('${listTitle}')/items`;
+  `${resolveApiWebUrl(webUrl)}/_api/web/lists/getByTitle('${listTitle}')/items`;
 
 export const buildTermSetTermsApiUrl = (webUrl: string, termSetId: string): string =>
-  `${webUrl}/_api/v2.1/termstore/groups('${TENANT_CONFIG.termStore.groupId}')/sets('${termSetId}')/terms`;
+  `${resolveApiWebUrl(webUrl)}/_api/v2.1/termstore/groups('${TENANT_CONFIG.termStore.groupId}')/sets('${termSetId}')/terms`;
+
+const getODataNextLink = (payload: any): string | undefined => {
+  if (!payload || typeof payload !== 'object') {
+    return undefined;
+  }
+
+  return (
+    payload['@odata.nextLink'] ||
+    payload['@odata.nextlink'] ||
+    payload['odata.nextLink'] ||
+    payload['odata.nextlink']
+  );
+};
+
+export const fetchTermLabelMap = async (
+  webUrl: string,
+  termSetId: string,
+  targetGuids?: Set<string>
+): Promise<Record<string, string>> => {
+  const wanted = targetGuids
+    ? new Set(Array.from(targetGuids).map(g => g.toLowerCase()))
+    : undefined;
+
+  const labels: Record<string, string> = {};
+  const visitedUrls = new Set<string>();
+  let url: string | undefined = buildTermSetTermsApiUrl(webUrl, termSetId);
+
+  while (url && !visitedUrls.has(url)) {
+    visitedUrls.add(url);
+
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' }
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`Term set request failed (${response.status}): ${detail || response.statusText}`);
+    }
+
+    const payload = await response.json();
+    const terms = Array.isArray(payload?.value) ? payload.value : [];
+
+    terms.forEach((term: any) => {
+      const id = String(term?.id || '').toLowerCase();
+      if (!id) return;
+      if (wanted && !wanted.has(id)) return;
+
+      const label =
+        term?.labels?.find((l: any) => l?.isDefault)?.name ||
+        term?.labels?.[0]?.name;
+
+      if (label) {
+        labels[id] = String(label);
+      }
+    });
+
+    if (wanted && Object.keys(labels).length >= wanted.size) {
+      break;
+    }
+
+    url = getODataNextLink(payload);
+  }
+
+  return labels;
+};
 
 export type PriorityFilter = (typeof TENANT_CONFIG.ui.tasks.priorityFilters)[number];
 export type ClientPanelTab = (typeof TENANT_CONFIG.ui.tabs.clientPanel)[number];
