@@ -19,6 +19,7 @@ const TasksTab: React.FC<TasksTabProps> = ({
   clientTermGuid
 }) => {
   type TaskSortKey = 'Title' | 'Entity' | 'AssignedTo' | 'DueDate' | 'Priority' | 'Status';
+  const taskFormPathRef = React.useRef<string>('');
 
   const [tasks, setTasks] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -235,10 +236,6 @@ const TasksTab: React.FC<TasksTabProps> = ({
     return normalizePriority(value) === priorityFilter;
   };
 
-  const openAddNewTask = (): void => {
-    setShowAddPopup(true);
-  };
-
   const formatDate = (value: any): string => {
     if (!value) return '—';
     const d = new Date(value);
@@ -285,75 +282,8 @@ const TasksTab: React.FC<TasksTabProps> = ({
     setEntityTerms(map);
   };
 
-  const filteredTasks = React.useMemo(() => {
-    const search = searchText.trim().toLowerCase();
-
-    return tasks.filter(task => {
-      if (!matchesPriorityFilter(task.Priority)) {
-        return false;
-      }
-
-      if (!search) {
-        return true;
-      }
-
-      const fields = [
-        String(task.Title || ''),
-        String(renderEntity(task) || ''),
-        String(renderAssignedTo(getAssignedToValue(task)) || ''),
-        String(getDueDateValue(task) || ''),
-        String(task.Priority || ''),
-        String(task.Status || '')
-      ]
-        .join(' ')
-        .toLowerCase();
-
-      return fields.includes(search);
-    });
-  }, [tasks, searchText, priorityFilter, entityTerms]);
-
-  const sortedTasks = React.useMemo(() => {
-    const list = [...filteredTasks];
-    const compare = (a: any, b: any): number => {
-      const { key, direction } = sortConfig;
-      const dir = direction === 'asc' ? 1 : -1;
-
-      if (key === 'Entity') {
-        const av = renderEntity(a).toLowerCase();
-        const bv = renderEntity(b).toLowerCase();
-        return av.localeCompare(bv) * dir;
-      }
-
-      if (key === 'AssignedTo') {
-        const av = renderAssignedTo(getAssignedToValue(a)).toLowerCase();
-        const bv = renderAssignedTo(getAssignedToValue(b)).toLowerCase();
-        return av.localeCompare(bv) * dir;
-      }
-
-      if (key === 'DueDate') {
-        const av = new Date(getDueDateValue(a) || '').getTime();
-        const bv = new Date(getDueDateValue(b) || '').getTime();
-        return (av - bv) * dir;
-      }
-
-      const av = String(a[key] || '').toLowerCase();
-      const bv = String(b[key] || '').toLowerCase();
-      return av.localeCompare(bv) * dir;
-    };
-
-    return list.sort(compare);
-  }, [filteredTasks, sortConfig, entityTerms]);
-
-  const handleSort = (key: typeof sortConfig.key) => {
-    setSortConfig(prev => {
-      if (prev.key === key) {
-        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
-      }
-      return { key, direction: 'asc' };
-    });
-  };
-
   /* ---------------- MAIN LOAD ---------------- */
+  // NOTE: loadTasks is now declared BEFORE it gets called by the popup functions!
 
   const loadTasks = async () => {
     try {
@@ -533,36 +463,183 @@ const TasksTab: React.FC<TasksTabProps> = ({
     void loadTasks();
   }, [clientId, clientTermGuid]);
 
-  // NEW: Fast-close logic for the Task iframe
+
+  /* ---------------- POPUP HANDLING ---------------- */
+  // NOTE: Moved down here so they can safely call loadTasks() 
+
+  const openAddNewTask = (): void => {
+    setShowAddPopup(true);
+  };
+
+  const closeAddTask = () => {
+    setShowAddPopup(false);
+    void loadTasks();
+  };
+
   const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
     try {
       const iframe = e.target as HTMLIFrameElement;
       const iframeWindow = iframe.contentWindow;
-      const iframeUrl = iframeWindow?.location.href;
+      const iframeUrl = iframeWindow?.location.href || '';
       
-      if (iframeUrl) {
-        const urlObj = new URL(iframeUrl);
-        
-        // 1. FALLBACK: Close if it manages to load AllItems.aspx
-        if (urlObj.pathname.toLowerCase().endsWith('allitems.aspx')) {
-          setShowAddPopup(false);
-          void loadTasks();
-          return;
-        }
+      if (!iframeUrl || iframeUrl === 'about:blank') return;
 
-        // 2. FAST CLOSE: Catch the unload event the moment Save/Cancel is clicked
+      const urlLower = iframeUrl.toLowerCase();
+      
+      // 1. FALLBACK: Close only when the iframe actually navigates to AllItems.aspx
+      // (ignore the AllItems.aspx that appears in the Source querystring of NewForm.aspx)
+      let pathLower = '';
+      try {
+        pathLower = new URL(iframeUrl).pathname.toLowerCase();
+      } catch {
+        /* ignore parse errors */
+      }
+      if (pathLower.endsWith('/allitems.aspx') || pathLower.endsWith('allitems.aspx')) {
+        closeAddTask();
+        return;
+      }
+
+      // 1b. If the iframe navigates away from the original NewForm.aspx path, close it (cancel/save)
+      if (taskFormPathRef.current && pathLower && pathLower !== taskFormPathRef.current) {
+        closeAddTask();
+        return;
+      }
+
+      // 2. CSS INJECTION + CANCEL WIRING: fix scrollbars, hide ribbon, and hook cancel buttons
+      if (iframeWindow && iframeWindow.document) {
+        const style = iframeWindow.document.createElement('style');
+        style.innerHTML = `
+          /* Fix the missing scrollbars */
+          body, #s4-workspace {
+            overflow: auto !important;
+            overflow-y: auto !important;
+            height: 100% !important;
+          }
+          /* Hide the top ribbon and title area */
+          #s4-ribbonrow, #s4-titlerow {
+            display: none !important;
+          }
+        `;
+        iframeWindow.document.head.appendChild(style);
+
+        // Try to catch the Cancel button directly to close the popup immediately.
+        const wireCancelButtons = () => {
+          const doc = iframeWindow.document;
+          const selectors = [
+            "input[id$='CancelButton']",
+            "input[id$='GoBack']",
+            "a[id$='DlgClose']",
+            "button[id*='Cancel']",
+            "button[id*='cancel']"
+          ];
+          selectors.forEach(sel => {
+            doc.querySelectorAll(sel).forEach(el => {
+              el.addEventListener('click', () => {
+                // Delay a tick to allow any native handlers to run first
+                setTimeout(() => {
+                  closeAddTask();
+                }, 50);
+              });
+            });
+          });
+        };
+
+        wireCancelButtons();
+      }
+
+      // 3. FAST CLOSE: Catch the unload event the moment Save/Cancel is clicked
+      if (urlLower.indexOf('listform.aspx') !== -1 || urlLower.indexOf('newform.aspx') !== -1) {
         if (iframeWindow) {
           iframeWindow.addEventListener('unload', () => {
             setTimeout(() => {
-              setShowAddPopup(false);
-              void loadTasks();
-            }, 100);
+              closeAddTask();
+            }, 150);
           });
         }
       }
     } catch (error) {
-      console.warn("Iframe load check:", error);
+      console.warn("Iframe load check (Safe to ignore on cross-origin redirects):", error);
     }
+  };
+
+  // Cache the normalized path of the New Task form to detect navigation changes
+  React.useEffect(() => {
+    try {
+      taskFormPathRef.current = new URL(TENANT_CONFIG.lists.tasks.newItemFormUrl).pathname.toLowerCase();
+    } catch {
+      taskFormPathRef.current = '';
+    }
+  }, []);
+
+
+  /* ---------------- SORTING & FILTERING ---------------- */
+
+  const filteredTasks = React.useMemo(() => {
+    const search = searchText.trim().toLowerCase();
+
+    return tasks.filter(task => {
+      if (!matchesPriorityFilter(task.Priority)) {
+        return false;
+      }
+
+      if (!search) {
+        return true;
+      }
+
+      const fields = [
+        String(task.Title || ''),
+        String(renderEntity(task) || ''),
+        String(renderAssignedTo(getAssignedToValue(task)) || ''),
+        String(getDueDateValue(task) || ''),
+        String(task.Priority || ''),
+        String(task.Status || '')
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return fields.includes(search);
+    });
+  }, [tasks, searchText, priorityFilter, entityTerms]);
+
+  const sortedTasks = React.useMemo(() => {
+    const list = [...filteredTasks];
+    const compare = (a: any, b: any): number => {
+      const { key, direction } = sortConfig;
+      const dir = direction === 'asc' ? 1 : -1;
+
+      if (key === 'Entity') {
+        const av = renderEntity(a).toLowerCase();
+        const bv = renderEntity(b).toLowerCase();
+        return av.localeCompare(bv) * dir;
+      }
+
+      if (key === 'AssignedTo') {
+        const av = renderAssignedTo(getAssignedToValue(a)).toLowerCase();
+        const bv = renderAssignedTo(getAssignedToValue(b)).toLowerCase();
+        return av.localeCompare(bv) * dir;
+      }
+
+      if (key === 'DueDate') {
+        const av = new Date(getDueDateValue(a) || '').getTime();
+        const bv = new Date(getDueDateValue(b) || '').getTime();
+        return (av - bv) * dir;
+      }
+
+      const av = String(a[key] || '').toLowerCase();
+      const bv = String(b[key] || '').toLowerCase();
+      return av.localeCompare(bv) * dir;
+    };
+
+    return list.sort(compare);
+  }, [filteredTasks, sortConfig, entityTerms]);
+
+  const handleSort = (key: typeof sortConfig.key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
   };
 
   /* ---------------- RENDER ---------------- */
@@ -703,10 +780,7 @@ const TasksTab: React.FC<TasksTabProps> = ({
               <button
                 type="button"
                 className={styles.popupClose}
-                onClick={() => {
-                  setShowAddPopup(false);
-                  void loadTasks(); // Refresh tasks manually if user closes via the 'X' button
-                }}
+                onClick={closeAddTask}
                 aria-label="Close"
               >
                 ×
@@ -716,7 +790,8 @@ const TasksTab: React.FC<TasksTabProps> = ({
               title="Add New Task"
               src={TENANT_CONFIG.lists.tasks.newItemFormUrl}
               className={styles.popupFrame}
-              onLoad={handleIframeLoad} // NEW: Attached the event listener here
+              onLoad={handleIframeLoad} 
+              scrolling="yes"
             />
           </div>
         </div>

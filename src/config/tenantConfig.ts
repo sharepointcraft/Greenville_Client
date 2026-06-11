@@ -10,7 +10,7 @@ const REALITY_CRAFT = {
     sets: {
       clients: 'e15c7ba0-e449-437f-bb70-b35bc582edda',
       entities: '63f8136b-40cf-4d43-890a-73d4959c5a68',
-      banks: 'e15c7ba0-e449-437f-bb70-b35bc582edda'
+      banks: '6be8631f-bec1-46ba-b4cf-2e3704aeafbb'
     }
   },
   lists: {
@@ -166,8 +166,10 @@ const REALITY_CRAFT = {
 const GREENVILLE = {
   ...REALITY_CRAFT,
   sites: {
-    prodHome: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home',
-    docCenter: 'https://greenvilleptrs.sharepoint.com/sites/Prod-DocCenter'
+    //prodHome: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home',
+    prodHome: 'https://greenvilleptrs.sharepoint.com',
+    //docCenter: 'https://greenvilleptrs.sharepoint.com/sites/Prod-DocCenter'
+    docCenter: 'https://greenvilleptrs.sharepoint.com/sites/DocCenter'
   },
   termStore: {
     groupId: '35fa5400-bc14-40e7-97f0-71b8ab5d5409',
@@ -181,23 +183,35 @@ const GREENVILLE = {
     ...REALITY_CRAFT.lists,
     clients: {
       ...REALITY_CRAFT.lists.clients,
-      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Clients/AllItems.aspx',
-      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7BD055FA58-F79D-496A-A914-35E21B3675A9%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FClients&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FClients%2FAllItems.aspx&ContentTypeId=0x0100C441AE8AC3A035499BD4A40EF481581600FD2764DABCAC504483BC664D29A7796D'
+      //allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Clients/AllItems.aspx',
+      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/Lists/Clients/AllItems.aspx',
+      //newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7BC8527B0F-0091-464C-A7CE-0C09EF397DDC%7D&RootFolder=&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FClients%2FAllItems.aspx&ContentTypeId=0x01009FFEAA223A40C34BAB450D9EC3E45AA400679AF1D655EED346819147A53407572A'
+      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/_layouts/15/listform.aspx?PageType=8&ListId=%7B1C4CF318-F554-483D-B81E-24E622890618%7D&RootFolder=%2FLists%2FClients&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2FLists%2FClients%2FAllItems.aspx&ContentTypeId=0x0100D4C4DC133B3381478B3A04B7C565AD20009DD9D838A69416458B21FB4C53AF10D5'
     },
+
     entities: {
       ...REALITY_CRAFT.lists.entities,
-      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Entities/AllItems.aspx',
-      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B5B64CCEF-5176-4D1E-AFD2-BF67366BEA81%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FEntities&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FEntities%2FAllItems.aspx&ContentTypeId=0x010005A065D7CC77D146A540E9E94E26F332009595D5DD684D9F47BDF0DE601379CD13'
+      //allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Entities/AllItems.aspx',
+      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/Lists/Entities/New%20All.aspx',
+      //newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7BE85D2D7C-AFB7-4706-8504-7F0D10E6BD5B%7D&RootFolder=&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FEntities%2FAllItems.aspx&ContentTypeId=0x010016F7C34266E6C441BDE5517FEB5588170200829CC7FF2B5E5B4EB95DB67C573250E0',
+      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/_layouts/15/listform.aspx?PageType=8&ListId=%7B4FCB33A4-DAD8-4112-8CE0-D862345F78FB%7D&RootFolder=%2FLists%2FEntities&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2FLists%2FEntities%2FNew%2520All.aspx%3Fviewid%3D9585ee30%252Da541%252D424b%252Daf8b%252D17d75b26a80b&ContentTypeId=0x010031B9824B9564CB4A96420127902ACED10101001A808E78D5DEE54684C127E07AD49A12',
+      columns: {
+        ...REALITY_CRAFT.lists.entities.columns,
+        bank: 'Bank1'
+      }
     },
     tasks: {
       ...REALITY_CRAFT.lists.tasks,
-      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Tasks/AllItems.aspx',
-      newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/_layouts/15/listform.aspx?PageType=8&ListId=%7B6CD2A192-B82C-4304-A936-F400D0E66FEC%7D&RootFolder=%2Fsites%2FProd-Home%2FLists%2FTasks&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FTasks%2FAllItems.aspx&ContentTypeId=0x0100A2DB78381F4D3541900EBE1DE131DD3E0064E6958DA895BF44AC2862F2A62CFE11'
+      //allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Tasks/AllItems.aspx',
+      allItemsUrl: 'https://greenvilleptrs.sharepoint.com/Lists/Tasks/AllItems.aspx',
+      //newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Tasks/NewForm.aspx?ContentTypeId=0x0108000B261A6A5642A046874DBD93AC285C6F007A611AD860405A4AA38BA773987F36E4&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FTasks%2FAllItems.aspx&IsDlg=1'
+       newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/_layouts/15/listform.aspx?PageType=8&ListId=%7B8069C902-70F4-4B95-A932-5C8E6DE07266%7D&RootFolder=%2FLists%2FTasks&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2FLists%2FTasks%2FAllItems.aspx&ContentTypeId=0x010800DBE31308D0237C41B50F1B93F41C5410'
     }
   },
   libraries: {
     ...REALITY_CRAFT.libraries,
-    documentCenterPath: 'https://greenvilleptrs.sharepoint.com/sites/Prod-DocCenter/*'
+   // documentCenterPath: 'https://greenvilleptrs.sharepoint.com/sites/Prod-DocCenter/*'
+    documentCenterPath: 'https://greenvilleptrs.sharepoint.com/sites/DocCenter/*'
   }
 } as const;
 
