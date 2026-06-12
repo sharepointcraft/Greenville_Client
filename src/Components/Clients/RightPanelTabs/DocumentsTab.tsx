@@ -45,8 +45,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientTer
     TENANT_CONFIG.ui.documents.clientStatusFilters[0]
   );
   const [sortConfig, setSortConfig] = React.useState<{ key: keyof Document; direction: 'asc' | 'desc' }>({
-    key: 'name',
-    direction: 'asc'
+    key: 'modifiedDate',
+    direction: 'desc'
   });
 
   const loadDocuments = React.useCallback(async () => {

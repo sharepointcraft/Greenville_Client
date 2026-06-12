@@ -40,8 +40,8 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
   const [error, setError] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [sortConfig, setSortConfig] = React.useState<{ key: keyof Document; direction: 'asc' | 'desc' }>({
-    key: 'name',
-    direction: 'asc'
+    key: 'modifiedDate',
+    direction: 'desc'
   });
   const subTabs = React.useMemo(() => TENANT_CONFIG.libraries.entityActivityFilters, []);
   const [activeActivity, setActiveActivity] = React.useState<string>(

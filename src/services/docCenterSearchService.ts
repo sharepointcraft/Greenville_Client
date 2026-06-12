@@ -57,6 +57,11 @@ interface IDocCenterLibrary {
   rootFolderUrl: string;
 }
 
+interface IDocCenterTargetLibraryConfig {
+  title: string;
+  internalName: string;
+}
+
 export interface IDocumentSearchResult {
   documents: IDocumentSearchItem[];
   taxonomyMatch: IDocCenterTermValidation;
@@ -98,6 +103,31 @@ const getODataNextLink = (payload: any): string | undefined =>
   payload?.['odata.nextLink'] ||
   payload?.['odata.nextlink'];
 
+const DOC_CENTER_TARGET_LIBRARIES: IDocCenterTargetLibraryConfig[] = [
+  // Add Doc Center libraries here as needed. Use the URL/internal name for spaces, e.g. Client%20Services.
+  { title: 'Asset Management', internalName: 'Asset%20Management' },
+  { title: 'Canoe API Document Center', internalName: 'Canoe%20API%20Document%20Center' },
+  { title: 'Canoe Document Center', internalName: 'Canoe%20Document%20Center' },
+  { title: 'Client Services', internalName: 'Client%20Services' },
+  { title: 'Entity Management', internalName: 'Entity%20Management' },
+  { title: 'Greenville Capital LLC II', internalName: 'Greenville%20Capital%20LLC%20II' },
+  { title: 'Greenville Capital LLC', internalName: 'Greenville%20Capital%20LLC' },
+  { title: 'Investment', internalName: 'Investment' },
+  { title: 'Meeting Document Library', internalName: 'Meeting%20Document%20Library' },
+  { title: 'Foundation', internalName: 'Foundation' },
+  { title: 'Finance Tax', internalName: 'Finance%20Tax' }
+];
+const DOC_CENTER_REST_SCAN_ITEM_LIMIT = 50;
+
+const getObjectValue = (item: any, key: string): any => {
+  if (!item || typeof item !== 'object') {
+    return undefined;
+  }
+
+  const actualKey = Object.keys(item).find(name => name.toLowerCase() === key.toLowerCase());
+  return actualKey ? item[actualKey] : undefined;
+};
+
 const getAbsoluteUrlFromServerRelativePath = (serverRelativePath: string): string => {
   const siteUrl = new URL(TENANT_CONFIG.sites.docCenter);
   const normalizedPath = String(serverRelativePath || '').startsWith('/')
@@ -106,6 +136,17 @@ const getAbsoluteUrlFromServerRelativePath = (serverRelativePath: string): strin
 
   return `${siteUrl.origin}${normalizedPath}`;
 };
+
+const getDocCenterSiteServerRelativePath = (): string => {
+  try {
+    return new URL(TENANT_CONFIG.sites.docCenter).pathname.replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+};
+
+const getTargetDocCenterLibraryServerRelativeUrl = (library: IDocCenterTargetLibraryConfig): string =>
+  `${getDocCenterSiteServerRelativePath()}/${library.internalName}`;
 
 const escapeKqlPhrase = (value: string): string => String(value || '').replace(/"/g, '""');
 
@@ -371,6 +412,385 @@ const dedupeDocuments = (documents: ISearchRowDocument[]): IDocumentSearchItem[]
   }));
 };
 
+const mapDocCenterLibrary = (library: any): IDocCenterLibrary | null => {
+  const id = String(getObjectValue(library, 'Id') || '').trim();
+  const title = String(getObjectValue(library, 'Title') || '').trim();
+  const rootFolder = getObjectValue(library, 'RootFolder');
+  const rootFolderUrl = String(getObjectValue(rootFolder, 'ServerRelativeUrl') || '').trim();
+
+  if (!id || !title || !rootFolderUrl) {
+    return null;
+  }
+
+  return { id, title, rootFolderUrl };
+};
+
+const getDocCenterLists = async (): Promise<any[]> => {
+  const url =
+    `${TENANT_CONFIG.sites.docCenter}/_api/web/lists?` +
+    `$select=Id,Title,BaseTemplate,BaseType,Hidden,ItemCount,RootFolder/ServerRelativeUrl&$expand=RootFolder`;
+
+  debugLog('DocCenter list discovery started', { url });
+
+  const response = await fetch(url, {
+    headers: { Accept: 'application/json;odata=nometadata' }
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`DocCenter lists failed (${response.status}): ${detail || response.statusText}`);
+  }
+
+  const payload = await response.json();
+  const lists = Array.isArray(payload?.value) ? payload.value : [];
+
+  debugLog('DocCenter list discovery completed', {
+    count: lists.length,
+    lists: lists.map((list: any) => ({
+      title: getObjectValue(list, 'Title'),
+      baseTemplate: getObjectValue(list, 'BaseTemplate'),
+      baseType: getObjectValue(list, 'BaseType'),
+      hidden: getObjectValue(list, 'Hidden'),
+      itemCount: getObjectValue(list, 'ItemCount'),
+      rootFolderUrl: getObjectValue(getObjectValue(list, 'RootFolder'), 'ServerRelativeUrl')
+    }))
+  });
+
+  return lists;
+};
+
+const getDocCenterLibraryByTitle = async (title: string): Promise<IDocCenterLibrary | null> => {
+  const escapedTitle = title.replace(/'/g, "''");
+  const url =
+    `${TENANT_CONFIG.sites.docCenter}/_api/web/lists/getbytitle('${escapedTitle}')?` +
+    `$select=Id,Title,BaseTemplate,BaseType,Hidden,ItemCount,RootFolder/ServerRelativeUrl&$expand=RootFolder`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json;odata=nometadata' }
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return mapDocCenterLibrary(await response.json());
+  } catch {
+    return null;
+  }
+};
+
+const getTargetDocCenterLibrary = async (
+  targetLibrary: IDocCenterTargetLibraryConfig
+): Promise<IDocCenterLibrary | null> => {
+  const serverRelativeUrl = getTargetDocCenterLibraryServerRelativeUrl(targetLibrary);
+  const escapedServerRelativeUrl = serverRelativeUrl.replace(/'/g, "''");
+  const url =
+    `${TENANT_CONFIG.sites.docCenter}/_api/web/GetList('${escapedServerRelativeUrl}')?` +
+    `$select=Id,Title,BaseTemplate,BaseType,Hidden,ItemCount,RootFolder/ServerRelativeUrl&$expand=RootFolder`;
+
+  debugLog('DocCenter target library lookup started', {
+    targetLibrary,
+    serverRelativeUrl,
+    url
+  });
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json;odata=nometadata' }
+    });
+
+    if (response.ok) {
+      const library = mapDocCenterLibrary(await response.json());
+      debugLog('DocCenter target library lookup completed by internal name', { targetLibrary, library });
+      return library;
+    }
+
+    const detail = await response.text();
+    console.warn(`DocCenter target library lookup by internal name failed (${response.status}):`, detail || response.statusText);
+  } catch (error) {
+    console.warn('DocCenter target library lookup by internal name failed', error);
+  }
+
+  const library = await getDocCenterLibraryByTitle(targetLibrary.title);
+  debugLog('DocCenter target library lookup completed by title fallback', { targetLibrary, library });
+  return library;
+};
+
+const getKnownDocCenterLibraryTitles = (): string[] =>
+  uniqueStrings([
+    ...TENANT_CONFIG.libraries.entityActivityFilters.filter(title => title !== 'All Documents')
+  ]);
+
+const getDocCenterDocumentLibraries = async (): Promise<IDocCenterLibrary[]> => {
+  if (DOC_CENTER_TARGET_LIBRARIES.length) {
+    const targetLibraries = (await Promise.all(DOC_CENTER_TARGET_LIBRARIES.map(getTargetDocCenterLibrary)))
+      .filter(Boolean) as IDocCenterLibrary[];
+
+    debugLog('DocCenter library scan using configured libraries only', {
+      configuredLibraries: DOC_CENTER_TARGET_LIBRARIES,
+      foundCount: targetLibraries.length,
+      libraries: targetLibraries
+    });
+
+    return targetLibraries;
+  }
+
+  debugLog('DocCenter library scan started', { knownTitles: getKnownDocCenterLibraryTitles() });
+
+  const lists = await getDocCenterLists();
+  const libraries = lists
+    .filter((library: any) => {
+      const baseTemplate = Number(getObjectValue(library, 'BaseTemplate'));
+      const baseType = Number(getObjectValue(library, 'BaseType'));
+      return baseTemplate === 101 || baseType === 1;
+    })
+    .map(mapDocCenterLibrary)
+    .filter(Boolean) as IDocCenterLibrary[];
+  const libraryByTitle = new Map<string, IDocCenterLibrary>();
+
+  libraries.forEach(library => libraryByTitle.set(library.title.toLowerCase(), library));
+
+  const knownLibraries = await Promise.all(getKnownDocCenterLibraryTitles().map(getDocCenterLibraryByTitle));
+  knownLibraries
+    .filter(Boolean)
+    .forEach(library => libraryByTitle.set((library as IDocCenterLibrary).title.toLowerCase(), library as IDocCenterLibrary));
+
+  debugLog('DocCenter library scan completed', {
+    count: libraryByTitle.size,
+    libraries: Array.from(libraryByTitle.values())
+  });
+
+  return Array.from(libraryByTitle.values());
+};
+
+const getDocCenterLibraryItemsUrl = (library: IDocCenterLibrary): string =>
+  `${TENANT_CONFIG.sites.docCenter}/_api/web/lists(guid'${library.id}')/items?` +
+  `$top=${DOC_CENTER_REST_SCAN_ITEM_LIMIT}&$orderby=Modified desc&$expand=Author,Editor,File`;
+
+const getDocCenterLibraryItemsUrlWithoutExpand = (library: IDocCenterLibrary): string =>
+  `${TENANT_CONFIG.sites.docCenter}/_api/web/lists(guid'${library.id}')/items?` +
+  `$top=${DOC_CENTER_REST_SCAN_ITEM_LIMIT}&$orderby=Modified desc`;
+
+const mapDocCenterFileItem = (file: any, library: IDocCenterLibrary): ISearchRowDocument | null => {
+  const listItem = file?.ListItemAllFields || {};
+  return mapDocCenterListItem(
+    {
+      ...listItem,
+      FileRef: listItem?.FileRef || file?.ServerRelativeUrl,
+      FileLeafRef: listItem?.FileLeafRef || file?.Name,
+      Modified: listItem?.Modified || file?.TimeLastModified,
+      Title: listItem?.Title || file?.Title || file?.Name
+    },
+    library
+  );
+};
+
+const getFolderFilesUrl = (folderServerRelativeUrl: string): string => {
+  const serverRelativeUrl = decodeURIComponent(folderServerRelativeUrl).replace(/'/g, "''");
+  return `${TENANT_CONFIG.sites.docCenter}/_api/web/GetFolderByServerRelativePath(decodedurl='${serverRelativeUrl}')/Files?` +
+    `$top=${DOC_CENTER_REST_SCAN_ITEM_LIMIT}&$orderby=TimeLastModified desc&$expand=ListItemAllFields`;
+};
+
+const getFolderSubfoldersUrl = (folderServerRelativeUrl: string): string => {
+  const serverRelativeUrl = decodeURIComponent(folderServerRelativeUrl).replace(/'/g, "''");
+  return `${TENANT_CONFIG.sites.docCenter}/_api/web/GetFolderByServerRelativePath(decodedurl='${serverRelativeUrl}')/Folders?` +
+    `$select=Name,ServerRelativeUrl`;
+};
+
+const getFolderFiles = async (
+  library: IDocCenterLibrary,
+  folderServerRelativeUrl: string,
+  remainingLimit: number
+): Promise<ISearchRowDocument[]> => {
+  const documents: ISearchRowDocument[] = [];
+  let url: string | undefined = getFolderFilesUrl(folderServerRelativeUrl);
+
+  while (url && documents.length < remainingLimit) {
+    debugLog('DocCenter folder files scan page started', {
+      library: library.title,
+      folderServerRelativeUrl,
+      url
+    });
+
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json;odata=nometadata' }
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      console.warn(`DocCenter folder files failed (${response.status}):`, detail || response.statusText);
+      break;
+    }
+
+    const payload = await response.json();
+    const pageDocuments = (Array.isArray(payload?.value) ? payload.value : [])
+      .map((file: any) => mapDocCenterFileItem(file, library))
+      .filter(Boolean) as ISearchRowDocument[];
+
+    documents.push(...pageDocuments.slice(0, remainingLimit - documents.length));
+    url = undefined;
+  }
+
+  debugLog('DocCenter target folder files scan completed', {
+    library: library.title,
+    folderServerRelativeUrl,
+    count: documents.length,
+    documents: documents.map(document => ({
+      title: document.title,
+      path: document.path,
+      relatedClient: document.relatedClient,
+      relatedEntity: document.relatedEntity
+    }))
+  });
+
+  return documents;
+};
+
+const getFolderSubfolders = async (folderServerRelativeUrl: string): Promise<string[]> => {
+  const subfolders: string[] = [];
+  let url: string | undefined = getFolderSubfoldersUrl(folderServerRelativeUrl);
+
+  while (url) {
+    debugLog('DocCenter folder subfolders scan page started', { folderServerRelativeUrl, url });
+
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json;odata=nometadata' }
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      console.warn(`DocCenter folder subfolders failed (${response.status}):`, detail || response.statusText);
+      break;
+    }
+
+    const payload = await response.json();
+    (Array.isArray(payload?.value) ? payload.value : [])
+      .filter((folder: any) => String(folder?.Name || '').toLowerCase() !== 'forms')
+      .map((folder: any) => String(folder?.ServerRelativeUrl || '').trim())
+      .filter(Boolean)
+      .forEach((serverRelativeUrl: string) => subfolders.push(serverRelativeUrl));
+
+    url = getODataNextLink(payload);
+  }
+
+  return subfolders;
+};
+
+const getTargetDocCenterFolderFiles = async (library: IDocCenterLibrary): Promise<ISearchRowDocument[]> => {
+  const documents: ISearchRowDocument[] = [];
+  const visitedFolders = new Set<string>();
+  const queue = [decodeURIComponent(library.rootFolderUrl)];
+
+  while (queue.length) {
+    const folderServerRelativeUrl = queue.shift() as string;
+    const normalizedFolder = folderServerRelativeUrl.toLowerCase();
+
+    if (visitedFolders.has(normalizedFolder)) {
+      continue;
+    }
+
+    visitedFolders.add(normalizedFolder);
+    documents.push(...await getFolderFiles(
+      library,
+      folderServerRelativeUrl,
+      DOC_CENTER_REST_SCAN_ITEM_LIMIT - documents.length
+    ));
+    if (documents.length >= DOC_CENTER_REST_SCAN_ITEM_LIMIT) {
+      break;
+    }
+    queue.push(...await getFolderSubfolders(folderServerRelativeUrl));
+  }
+
+  debugLog('DocCenter target recursive folder scan completed', {
+    library: library.title,
+    foldersScanned: visitedFolders.size,
+    count: documents.length
+  });
+
+  return documents;
+};
+
+const getDocumentModifiedTime = (document: ISearchRowDocument): number => {
+  const rawValue = String(document.metadata?.Modified || document.modifiedDate || '').trim();
+  const time = rawValue ? new Date(rawValue).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+};
+
+const sortDocumentsByModifiedDesc = (documents: ISearchRowDocument[]): ISearchRowDocument[] =>
+  [...documents].sort((a, b) => getDocumentModifiedTime(b) - getDocumentModifiedTime(a));
+
+const getDocCenterLibraryItems = async (library: IDocCenterLibrary): Promise<ISearchRowDocument[]> => {
+  const documents: ISearchRowDocument[] = [];
+  let url: string | undefined = getDocCenterLibraryItemsUrl(library);
+  let retriedWithoutExpand = false;
+
+  while (url) {
+    debugLog('DocCenter library items scan page started', { library: library.title, url });
+
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json;odata=nometadata' }
+    });
+
+    if (!response.ok) {
+      const detail = await response.text();
+      if (!retriedWithoutExpand && url.includes('$expand=')) {
+        console.warn(`DocCenter expanded library items failed for ${library.title} (${response.status}), retrying without expand:`, detail || response.statusText);
+        retriedWithoutExpand = true;
+        url = getDocCenterLibraryItemsUrlWithoutExpand(library);
+        continue;
+      }
+
+      console.warn(`DocCenter library items failed for ${library.title} (${response.status}):`, detail || response.statusText);
+      break;
+    }
+
+    const payload = await response.json();
+    const pageDocuments = (Array.isArray(payload?.value) ? payload.value : [])
+      .map((item: any) => mapDocCenterListItem(item, library))
+      .filter(Boolean) as ISearchRowDocument[];
+
+    documents.push(...pageDocuments.slice(0, DOC_CENTER_REST_SCAN_ITEM_LIMIT - documents.length));
+    url = undefined;
+  }
+
+  debugLog('DocCenter library items scan completed', {
+    library: library.title,
+    count: documents.length
+  });
+
+  if (!documents.length) {
+    return getTargetDocCenterFolderFiles(library);
+  }
+
+  return documents;
+};
+
+const getAllDocCenterDocumentsFromLists = async (): Promise<ISearchRowDocument[]> => {
+  try {
+    const libraries = await getDocCenterDocumentLibraries();
+    const pages = await Promise.all(libraries.map(getDocCenterLibraryItems));
+    const documents = sortDocumentsByModifiedDesc(
+      pages.reduce((all, page) => all.concat(page), [] as ISearchRowDocument[])
+    );
+
+    debugLog('DocCenter REST document scan completed', {
+      count: documents.length,
+      documents: documents.map(document => ({
+        title: document.title,
+        path: document.path,
+        relatedClient: document.relatedClient,
+        relatedEntity: document.relatedEntity
+      }))
+    });
+
+    return documents;
+  } catch (error) {
+    console.warn('DocCenter REST document scan failed', error);
+    return [];
+  }
+};
+
 const searchAllDocCenterDocuments = async (): Promise<ISearchRowDocument[]> => {
   const documents: ISearchRowDocument[] = [];
   const queries = [buildScope(), buildPathScope()];
@@ -418,14 +838,24 @@ const getFieldValueByCandidates = (item: any, candidates: string[]): any[] => {
   }
 
   const lowerKeyByName = new Map<string, string>();
-  Object.keys(item).forEach(key => lowerKeyByName.set(key.toLowerCase(), key));
+  const normalizedKeyByName = new Map<string, string>();
+  Object.keys(item).forEach(key => {
+    lowerKeyByName.set(key.toLowerCase(), key);
+    normalizedKeyByName.set(normalizeFieldKey(key), key);
+  });
 
   return candidates
-    .map(candidate => lowerKeyByName.get(candidate.toLowerCase()))
+    .map(candidate => lowerKeyByName.get(candidate.toLowerCase()) || normalizedKeyByName.get(normalizeFieldKey(candidate)))
     .filter(Boolean)
     .map(key => item[key as string])
     .filter(Boolean);
 };
+
+const normalizeFieldKey = (key: string): string =>
+  String(key || '')
+    .toLowerCase()
+    .replace(/_x0020_/g, '')
+    .replace(/[^a-z0-9]/g, '');
 
 const getFieldsContaining = (item: any, tokens: string[]): any[] => {
   if (!item || typeof item !== 'object') {
@@ -434,8 +864,8 @@ const getFieldsContaining = (item: any, tokens: string[]): any[] => {
 
   return Object.keys(item)
     .filter(key => {
-      const lower = key.toLowerCase();
-      return tokens.some(token => lower.includes(token.toLowerCase()));
+      const normalized = normalizeFieldKey(key);
+      return tokens.some(token => normalized.includes(normalizeFieldKey(token)));
     })
     .map(key => item[key])
     .filter(Boolean);
@@ -696,27 +1126,57 @@ export const searchDocCenterDocumentsByLabel = async (
     taxonomyMatch
   });
 
-  if (!taxonomyMatch.term?.id) {
-    return {
-      documents: [],
-      taxonomyMatch,
-      executedQuery: ''
-    };
-  }
-
-  const query = buildTaxonomyQuery(kind, taxonomyMatch.term.label || selectedLabel, taxonomyMatch.term.id);
+  const searchLabel = taxonomyMatch.term?.label || selectedLabel;
+  const searchTermId = taxonomyMatch.term?.id || undefined;
+  const query = buildTaxonomyQuery(kind, searchLabel, searchTermId);
   let documents = await runSearchQuery(query);
 
   if (!documents.length) {
-    debugLog('Primary document search empty, starting fallback scan', { kind, selectedLabel });
-    const allDocuments = await searchAllDocCenterDocuments();
-    const enrichedDocuments = await enrichDocumentsWithListItemMetadata(allDocuments);
-    documents = filterDocumentsByKind(
-      enrichedDocuments,
+    debugLog('Primary document search empty, starting fallback scan', {
       kind,
       selectedLabel,
-      taxonomyMatch.term.id
-    );
+      searchLabel,
+      searchTermId,
+      taxonomyMatched: taxonomyMatch.isValid
+    });
+    const allDocuments = await searchAllDocCenterDocuments();
+    const enrichedDocuments = await enrichDocumentsWithListItemMetadata(allDocuments);
+    documents = sortDocumentsByModifiedDesc(filterDocumentsByKind(
+      enrichedDocuments,
+      kind,
+      searchLabel,
+      searchTermId
+    ));
+
+    if (!documents.length) {
+      debugLog('Search fallback found no matches, starting REST library scan', {
+        kind,
+        selectedLabel,
+        searchLabel,
+        searchTermId
+      });
+      const listDocuments = await getAllDocCenterDocumentsFromLists();
+      documents = sortDocumentsByModifiedDesc(filterDocumentsByKind(
+        listDocuments,
+        kind,
+        searchLabel,
+        searchTermId
+      ));
+      debugLog('REST fallback filtered documents', {
+        kind,
+        selectedLabel,
+        scannedCount: listDocuments.length,
+        matchedCount: documents.length,
+        documents: documents.map(document => ({
+          title: document.title,
+          path: document.path,
+          relatedClient: document.relatedClient,
+          relatedEntity: document.relatedEntity,
+          relatedBank: document.relatedBank
+        }))
+      });
+    }
+
     debugLog('Fallback scan filtered documents', {
       kind,
       selectedLabel,
@@ -734,10 +1194,12 @@ export const searchDocCenterDocumentsByLabel = async (
     documents = await enrichDocumentsWithListItemMetadata(documents);
   }
 
+  documents = sortDocumentsByModifiedDesc(documents);
+
   debugLog('Document search completed', {
     kind,
     selectedLabel,
-    docCenterTermGuid: taxonomyMatch.term.id,
+    docCenterTermGuid: searchTermId,
     count: documents.length,
     documents: documents.map(document => ({
       title: document.title,
