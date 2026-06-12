@@ -61,7 +61,12 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
       setLoading(true);
       setError(null);
 
-      const result = await searchDocCenterDocumentsByLabel(webUrl, 'entities', entity.label);
+      const result = await searchDocCenterDocumentsByLabel(
+        webUrl,
+        'entities',
+        entity.label,
+        entity.docCenterTermGuid
+      );
       const mappedDocuments = result.documents.map(mapDocument);
       console.log(`${DEBUG_PREFIX} Entity documents loaded`, {
         entity,
@@ -79,7 +84,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     } finally {
       setLoading(false);
     }
-  }, [entity?.label, webUrl]);
+  }, [entity?.label, entity?.docCenterTermGuid, webUrl]);
 
   React.useEffect(() => {
     void loadDocuments();

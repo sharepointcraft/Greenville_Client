@@ -12,6 +12,7 @@ const DEBUG_PREFIX = '[Greenville Debug]';
 interface DocumentsTabProps {
   webUrl: string;
   clientId: number;
+  clientTermGuid?: string | null;
   clientName?: string | null;
 }
 
@@ -35,7 +36,7 @@ const mapDocument = (document: IDocumentSearchItem): Document => ({
   absoluteUrl: document.fileUrl
 });
 
-const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientName }) => {
+const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientTermGuid, clientName }) => {
   const [documents, setDocuments] = React.useState<Document[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -52,6 +53,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientNam
     try {
       console.log(`${DEBUG_PREFIX} Client documents load started`, {
         clientId,
+        clientTermGuid,
         clientName
       });
       setLoading(true);
@@ -67,10 +69,16 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientNam
         return;
       }
 
-      const result = await searchDocCenterDocumentsByLabel(webUrl, 'clients', rootClientLabel);
+      const result = await searchDocCenterDocumentsByLabel(
+        webUrl,
+        'clients',
+        rootClientLabel,
+        clientTermGuid
+      );
       const mappedDocuments = result.documents.map(mapDocument);
       console.log(`${DEBUG_PREFIX} Client documents loaded`, {
         clientId,
+        clientTermGuid,
         clientName,
         rootClientLabel,
         count: mappedDocuments.length,
@@ -86,7 +94,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientNam
     } finally {
       setLoading(false);
     }
-  }, [clientId, clientName, webUrl]);
+  }, [clientId, clientName, clientTermGuid, webUrl]);
 
   React.useEffect(() => {
     void loadDocuments();

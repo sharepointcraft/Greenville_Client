@@ -1,11 +1,11 @@
 import { TENANT_CONFIG, buildListItemsApiUrl } from '../config/tenantConfig';
 import {
   collectTermGuids,
-  mapRootLabelToDocCenterTerm,
   normalizeTaxonomyLabel,
   parseTaxonomyLabels,
   uniqueStrings,
-  type ITaxonomyMatch,
+  validateDocCenterTerm,
+  type IDocCenterTermValidation,
   type TaxonomyKind
 } from './taxonomyService';
 
@@ -51,9 +51,15 @@ interface IDocumentListItemMetadata {
   metadata: Record<string, string>;
 }
 
+interface IDocCenterLibrary {
+  id: string;
+  title: string;
+  rootFolderUrl: string;
+}
+
 export interface IDocumentSearchResult {
   documents: IDocumentSearchItem[];
-  taxonomyMatch: ITaxonomyMatch;
+  taxonomyMatch: IDocCenterTermValidation;
   executedQuery: string;
 }
 
@@ -86,6 +92,21 @@ const getFileNameFromPath = (path: string): string => {
   }
 };
 
+const getODataNextLink = (payload: any): string | undefined =>
+  payload?.['@odata.nextLink'] ||
+  payload?.['@odata.nextlink'] ||
+  payload?.['odata.nextLink'] ||
+  payload?.['odata.nextlink'];
+
+const getAbsoluteUrlFromServerRelativePath = (serverRelativePath: string): string => {
+  const siteUrl = new URL(TENANT_CONFIG.sites.docCenter);
+  const normalizedPath = String(serverRelativePath || '').startsWith('/')
+    ? serverRelativePath
+    : `/${serverRelativePath}`;
+
+  return `${siteUrl.origin}${normalizedPath}`;
+};
+
 const escapeKqlPhrase = (value: string): string => String(value || '').replace(/"/g, '""');
 
 const buildScope = (): string =>
@@ -100,46 +121,54 @@ const buildTaxonomyQuery = (
   docCenterTermId?: string
 ): string => {
   const props = TENANT_CONFIG.search.managedProperties;
+  const guid = String(docCenterTermId || '').trim().toLowerCase();
+  const guidQueries = guid
+    ? uniqueStrings([
+        guid,
+        `GP0|#${guid}`,
+        `L0|#0${guid}`
+      ]).map(value => `"${escapeKqlPhrase(value)}"`)
+    : [];
   const normalized = normalizeTaxonomyLabel(label);
-  const phrases = uniqueStrings([label, normalized])
+  const labelQueries = uniqueStrings([label, normalized])
     .filter(Boolean)
     .map(value => `"${escapeKqlPhrase(value)}"`);
-  const docCenterGuid = docCenterTermId ? `"${escapeKqlPhrase(docCenterTermId)}"` : '';
 
   const fieldQueries: string[] = [];
 
   if (kind === 'clients') {
-    if (docCenterGuid) {
-      fieldQueries.push(`${props.relatedClientTaxId}:(${docCenterGuid})`);
-      fieldQueries.push(`${props.relatedClient}:(${docCenterGuid})`);
+    if (labelQueries.length) {
+      fieldQueries.push(`${props.relatedClient}:(${labelQueries.join(' OR ')})`);
+      fieldQueries.push(`(${labelQueries.join(' OR ')})`);
     }
-    if (phrases.length) {
-      fieldQueries.push(`${props.relatedClient}:(${phrases.join(' OR ')})`);
-      fieldQueries.push(`(${phrases.join(' OR ')})`);
+    if (guidQueries.length) {
+      fieldQueries.push(`${props.relatedClientTaxId}:(${guidQueries.join(' OR ')})`);
     }
   }
 
   if (kind === 'entities') {
-    if (docCenterGuid) {
-      fieldQueries.push(`${props.relatedEntityTaxId}:(${docCenterGuid})`);
-      fieldQueries.push(`${props.relatedEntityTaxIdFallback}:(${docCenterGuid})`);
-      fieldQueries.push(`${props.relatedEntity}:(${docCenterGuid})`);
+    if (labelQueries.length) {
+      fieldQueries.push(`${props.relatedEntity}:(${labelQueries.join(' OR ')})`);
+      fieldQueries.push(`(${labelQueries.join(' OR ')})`);
     }
-    if (phrases.length) {
-      fieldQueries.push(`${props.relatedEntity}:(${phrases.join(' OR ')})`);
-      fieldQueries.push(`(${phrases.join(' OR ')})`);
+    if (guidQueries.length) {
+      fieldQueries.push(`${props.relatedEntityTaxId}:(${guidQueries.join(' OR ')})`);
+      fieldQueries.push(`${props.relatedEntityTaxIdFallback}:(${guidQueries.join(' OR ')})`);
     }
   }
 
   if (kind === 'banks') {
-    if (docCenterGuid) {
-      fieldQueries.push(`${props.relatedBankTaxId}:(${docCenterGuid})`);
-      fieldQueries.push(`${props.relatedBank}:(${docCenterGuid})`);
+    if (labelQueries.length) {
+      fieldQueries.push(`${props.relatedBank}:(${labelQueries.join(' OR ')})`);
+      fieldQueries.push(`(${labelQueries.join(' OR ')})`);
     }
-    if (phrases.length) {
-      fieldQueries.push(`${props.relatedBank}:(${phrases.join(' OR ')})`);
-      fieldQueries.push(`(${phrases.join(' OR ')})`);
+    if (guidQueries.length) {
+      fieldQueries.push(`${props.relatedBankTaxId}:(${guidQueries.join(' OR ')})`);
     }
+  }
+
+  if (!fieldQueries.length) {
+    return buildScope();
   }
 
   return `(${fieldQueries.join(' OR ')}) AND ${buildScope()}`;
@@ -383,7 +412,7 @@ const getSiteWebUrlFromFileUrl = (fileUrl: string): string => {
   return url.origin;
 };
 
-const getFieldValueByCandidates = (item: any, candidates: string[]): string[] => {
+const getFieldValueByCandidates = (item: any, candidates: string[]): any[] => {
   if (!item || typeof item !== 'object') {
     return [];
   }
@@ -398,7 +427,7 @@ const getFieldValueByCandidates = (item: any, candidates: string[]): string[] =>
     .filter(Boolean);
 };
 
-const getFieldsContaining = (item: any, tokens: string[]): string[] => {
+const getFieldsContaining = (item: any, tokens: string[]): any[] => {
   if (!item || typeof item !== 'object') {
     return [];
   }
@@ -410,6 +439,119 @@ const getFieldsContaining = (item: any, tokens: string[]): string[] => {
     })
     .map(key => item[key])
     .filter(Boolean);
+};
+
+const serializeMetadataValue = (value: any): string => {
+  if (!value) return '';
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(serializeMetadataValue).filter(Boolean).join(';#');
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.results)) {
+      return value.results.map(serializeMetadataValue).filter(Boolean).join(';#');
+    }
+
+    const guid = String(value.TermGuid || value.termGuid || value.Id || value.id || '').trim();
+    const label = String(
+      value.Label || value.label || value.Title || value.title || value.name || ''
+    ).trim();
+
+    if (label && guid) {
+      return `${label}|${guid}`;
+    }
+
+    if (label) {
+      return label;
+    }
+
+    if (guid) {
+      return guid;
+    }
+
+    return '';
+  }
+
+  return String(value);
+};
+
+const extractRelatedValuesFromItem = (
+  item: any
+): Pick<IDocumentListItemMetadata, 'relatedClientValues' | 'relatedEntityValues' | 'relatedBankValues'> => ({
+  relatedClientValues: uniqueStrings([
+    ...getFieldValueByCandidates(item, ['RelatedClient', 'Client']),
+    ...getFieldsContaining(item, ['relatedclient', 'client'])
+  ].map(serializeMetadataValue)),
+  relatedEntityValues: uniqueStrings([
+    ...getFieldValueByCandidates(item, ['RelatedEntity', 'ReletedEntity', 'Entity']),
+    ...getFieldsContaining(item, ['relatedentity', 'reletedentity', 'entity'])
+  ].map(serializeMetadataValue)),
+  relatedBankValues: uniqueStrings([
+    ...getFieldValueByCandidates(item, ['RelatedBank', 'Bank', 'Bank1']),
+    ...getFieldsContaining(item, ['relatedbank', 'bank'])
+  ].map(serializeMetadataValue))
+});
+
+const mapDocCenterListItem = (item: any, library: IDocCenterLibrary): ISearchRowDocument | null => {
+  const serverRelativePath = String(
+    item?.FileRef ||
+    item?.File?.ServerRelativeUrl ||
+    item?.EncodedAbsUrl ||
+    ''
+  ).trim();
+  const path = serverRelativePath
+    ? serverRelativePath.toLowerCase().startsWith('http')
+      ? serverRelativePath
+      : getAbsoluteUrlFromServerRelativePath(serverRelativePath)
+    : '';
+  const fileName = String(item?.FileLeafRef || getFileNameFromPath(path) || '').trim();
+  const title = String(item?.Title || fileName || '').trim();
+
+  if (!path || !title) {
+    return null;
+  }
+
+  const relatedValues = extractRelatedValuesFromItem(item);
+  const author = String(item?.Author?.Title || item?.Author || '');
+  const editor = String(item?.Editor?.Title || item?.Editor || '');
+  const modifiedBy = editor || author;
+  const modified = String(item?.Modified || '');
+
+  return {
+    title,
+    fileName,
+    fileUrl: path,
+    path,
+    activity: library.title || getLibraryNameFromPath(path),
+    status: '',
+    modifiedDate: modified ? new Date(modified).toLocaleDateString() : 'Unknown',
+    modifiedBy: extractUserName(modifiedBy),
+    author: extractUserName(author),
+    editor: extractUserName(editor),
+    relatedClient: valuesToDisplayText(relatedValues.relatedClientValues),
+    relatedEntity: valuesToDisplayText(relatedValues.relatedEntityValues),
+    relatedBank: valuesToDisplayText(relatedValues.relatedBankValues),
+    relatedClientValues: relatedValues.relatedClientValues,
+    relatedEntityValues: relatedValues.relatedEntityValues,
+    relatedBankValues: relatedValues.relatedBankValues,
+    metadata: {
+      Title: title,
+      FileName: fileName,
+      Path: path,
+      Modified: modified,
+      Author: author,
+      Editor: editor,
+      ModifiedBy: modifiedBy,
+      RelatedClient: valuesToDisplayText(relatedValues.relatedClientValues),
+      RelatedEntity: valuesToDisplayText(relatedValues.relatedEntityValues),
+      RelatedBank: valuesToDisplayText(relatedValues.relatedBankValues)
+    }
+  };
 };
 
 const getListItemMetadata = async (fileUrl: string): Promise<IDocumentListItemMetadata | undefined> => {
@@ -438,15 +580,15 @@ const getListItemMetadata = async (fileUrl: string): Promise<IDocumentListItemMe
     const relatedClientValues = uniqueStrings([
       ...getFieldValueByCandidates(item, ['RelatedClient', 'Client']),
       ...getFieldsContaining(item, ['relatedclient', 'client'])
-    ].map(value => String(value)));
+    ].map(serializeMetadataValue));
     const relatedEntityValues = uniqueStrings([
       ...getFieldValueByCandidates(item, ['RelatedEntity', 'ReletedEntity', 'Entity']),
       ...getFieldsContaining(item, ['relatedentity', 'reletedentity', 'entity'])
-    ].map(value => String(value)));
+    ].map(serializeMetadataValue));
     const relatedBankValues = uniqueStrings([
       ...getFieldValueByCandidates(item, ['RelatedBank', 'Bank', 'Bank1']),
       ...getFieldsContaining(item, ['relatedbank', 'bank'])
-    ].map(value => String(value)));
+    ].map(serializeMetadataValue));
     const author = String(item?.Author?.Title || item?.Author || '');
     const editor = String(item?.Editor?.Title || item?.Editor || '');
     const modified = String(item?.Modified || '');
@@ -541,34 +683,43 @@ const enrichDocumentsWithListItemMetadata = async (
 export const searchDocCenterDocumentsByLabel = async (
   webUrl: string,
   kind: TaxonomyKind,
-  rootLabel: string
+  selectedLabel: string,
+  docCenterTermGuid?: string | null
 ): Promise<IDocumentSearchResult> => {
-  debugLog('Document search requested', { kind, rootLabel });
+  debugLog('Document search requested', { kind, selectedLabel, docCenterTermGuid });
 
-  const taxonomyMatch = await mapRootLabelToDocCenterTerm(webUrl, kind, rootLabel);
-  debugLog('Taxonomy label mapping completed', {
+  const taxonomyMatch = await validateDocCenterTerm(webUrl, kind, selectedLabel, docCenterTermGuid);
+  debugLog('DocCenter taxonomy validation completed', {
     kind,
-    rootLabel,
-    rootTerm: taxonomyMatch.rootTerm,
-    docCenterTerm: taxonomyMatch.docCenterTerm
+    selectedLabel,
+    docCenterTermGuid,
+    taxonomyMatch
   });
 
-  const query = buildTaxonomyQuery(kind, rootLabel, taxonomyMatch.docCenterTerm?.id);
+  if (!taxonomyMatch.term?.id) {
+    return {
+      documents: [],
+      taxonomyMatch,
+      executedQuery: ''
+    };
+  }
+
+  const query = buildTaxonomyQuery(kind, taxonomyMatch.term.label || selectedLabel, taxonomyMatch.term.id);
   let documents = await runSearchQuery(query);
 
   if (!documents.length) {
-    debugLog('Primary document search empty, starting fallback scan', { kind, rootLabel });
+    debugLog('Primary document search empty, starting fallback scan', { kind, selectedLabel });
     const allDocuments = await searchAllDocCenterDocuments();
     const enrichedDocuments = await enrichDocumentsWithListItemMetadata(allDocuments);
     documents = filterDocumentsByKind(
       enrichedDocuments,
       kind,
-      rootLabel,
-      taxonomyMatch.docCenterTerm?.id
+      selectedLabel,
+      taxonomyMatch.term.id
     );
     debugLog('Fallback scan filtered documents', {
       kind,
-      rootLabel,
+      selectedLabel,
       scannedCount: allDocuments.length,
       matchedCount: documents.length,
       documents: documents.map(document => ({
@@ -585,7 +736,8 @@ export const searchDocCenterDocumentsByLabel = async (
 
   debugLog('Document search completed', {
     kind,
-    rootLabel,
+    selectedLabel,
+    docCenterTermGuid: taxonomyMatch.term.id,
     count: documents.length,
     documents: documents.map(document => ({
       title: document.title,

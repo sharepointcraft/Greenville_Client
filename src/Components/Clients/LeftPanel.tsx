@@ -5,13 +5,15 @@ import {
   buildListItemsApiUrl,
   fetchTermLabelMap
 } from '../../config/tenantConfig';
+import { loadGreenvilleMetadataCache } from '../../services/metadataCacheService';
+import { findTermByLabel } from '../../services/taxonomyService';
 
 const DEBUG_PREFIX = '[Greenville Debug]';
 
 interface LeftPanelProps {
   webUrl: string;
   selectedClientId: number | null;
-  onSelect: (id: number, termGuid: string, label: string) => void;
+  onSelect: (id: number, termGuid: string, label: string, docCenterTermGuid?: string | null) => void;
 }
 
 interface IClientUsage {
@@ -30,7 +32,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   onSelect
 }) => {
   const [items, setItems] = React.useState<
-    { id: number; label: string; termGuid: string }[]
+    { id: number; label: string; termGuid: string; docCenterTermGuid: string | null }[]
   >([]);
   const [showAddPopup, setShowAddPopup] = React.useState(false);
 
@@ -261,10 +263,11 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         console.warn('Client term-store lookup error:', err);
       }
 
+      const metadataCache = await loadGreenvilleMetadataCache(webUrl);
+
       const finalItems = usedTerms
-        .map(u => ({
-          id: u.itemId,
-          label: (() => {
+        .map(u => {
+          const label = (() => {
             const mapped = termMap.get(u.termGuid.toLowerCase()) || '';
             const fromListText = extractDisplayLabel(u.listText);
             if (isReadableName(fromListText)) return fromListText;
@@ -277,9 +280,16 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             if (isReadableName(u.alias)) return u.alias;
             if (isReadableName(mapped)) return mapped;
             return u.listText || u.label || u.title || u.alias || mapped || `Client ${u.itemId}`;
-          })(),
-          termGuid: u.termGuid
-        }))
+          })();
+          const docCenterTerm = findTermByLabel(metadataCache.docCenterClients, label);
+
+          return {
+            id: u.itemId,
+            label,
+            termGuid: u.termGuid,
+            docCenterTermGuid: docCenterTerm?.id || null
+          };
+        })
         .sort((a, b) => a.label.localeCompare(b.label));
 
       console.log(`${DEBUG_PREFIX} Client list loaded`, {
@@ -291,7 +301,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       if (finalItems.length && selectedClientId === null) {
         const first = finalItems[0];
         console.log(`${DEBUG_PREFIX} Client auto-selected`, first);
-        onSelect(first.id, first.termGuid, first.label);
+        onSelect(first.id, first.termGuid, first.label, first.docCenterTermGuid);
       }
     } catch (err) {
       console.error('LeftPanel load error:', err);
@@ -361,7 +371,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             }`}
             onClick={() => {
               console.log(`${DEBUG_PREFIX} Client clicked`, client);
-              onSelect(client.id, client.termGuid, client.label);
+              onSelect(client.id, client.termGuid, client.label, client.docCenterTermGuid);
             }}
           >
             {client.label}

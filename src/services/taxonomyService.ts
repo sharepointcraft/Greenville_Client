@@ -22,6 +22,13 @@ export interface ITaxonomyMatch {
   normalizedLabel: string;
 }
 
+export interface IDocCenterTermValidation {
+  term?: ITaxonomyTerm;
+  label: string;
+  normalizedLabel: string;
+  isValid: boolean;
+}
+
 const termsCache: Partial<Record<TermStoreScope, Partial<Record<TaxonomyKind, Promise<ITaxonomyTerm[]>>>>> = {};
 
 export const normalizeTaxonomyLabel = (value: string | undefined | null): string =>
@@ -228,6 +235,34 @@ export const findTermByLabel = (
     term.normalizedLabel === normalized ||
     term.labels.some(termLabel => normalizeTaxonomyLabel(termLabel) === normalized)
   );
+};
+
+export const findTermById = (
+  terms: ITaxonomyTerm[],
+  termGuid: string | undefined | null
+): ITaxonomyTerm | undefined => {
+  const normalizedGuid = String(termGuid || '').trim().toLowerCase();
+  if (!normalizedGuid) return undefined;
+
+  return terms.find(term => term.id.toLowerCase() === normalizedGuid);
+};
+
+export const validateDocCenterTerm = async (
+  webUrl: string,
+  kind: TaxonomyKind,
+  label: string,
+  termGuid?: string | null
+): Promise<IDocCenterTermValidation> => {
+  const normalizedLabel = normalizeTaxonomyLabel(label);
+  const docCenterTerms = await fetchTaxonomyTerms(webUrl, 'docCenter', kind);
+  const term = findTermById(docCenterTerms, termGuid) || findTermByLabel(docCenterTerms, label);
+
+  return {
+    term,
+    label,
+    normalizedLabel,
+    isValid: Boolean(term)
+  };
 };
 
 export const mapRootLabelToDocCenterTerm = async (

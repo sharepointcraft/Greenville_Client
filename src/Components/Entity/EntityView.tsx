@@ -13,6 +13,8 @@ import {
   fetchTermLabelMap,
   type EntityPanelTab
 } from '../../config/tenantConfig';
+import { loadGreenvilleMetadataCache } from '../../services/metadataCacheService';
+import { findTermByLabel } from '../../services/taxonomyService';
 
 const DEBUG_PREFIX = '[Greenville Debug]';
 
@@ -177,6 +179,7 @@ const EntityView: React.FC<EntityViewProps> = ({
         }
       });
 
+      const metadataCache = await loadGreenvilleMetadataCache(webUrl);
       const list: EntitySelection[] = [];
       entityGuids.forEach(guid => {
         const mapped = labelMap.get(guid) || '';
@@ -186,10 +189,12 @@ const EntityView: React.FC<EntityViewProps> = ({
           : isReadableEntityLabel(fallback)
             ? fallback
             : guid;
+        const docCenterTerm = findTermByLabel(metadataCache.docCenterEntities, label);
 
         list.push({
           id: guidToItemId.get(guid),
           termGuid: guid,
+          docCenterTermGuid: docCenterTerm?.id || null,
           label,
           relatedClientGuid: initialEntity?.relatedClientGuid || ''
         });

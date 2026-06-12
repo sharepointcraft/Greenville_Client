@@ -12,6 +12,7 @@ const DEBUG_PREFIX = '[Greenville Debug]';
 interface IGreenVilleClientState {
   selectedClientId: number | null;
   selectedClientTermGuid: string | null;
+  selectedClientDocCenterTermGuid: string | null;
   selectedClientName: string | null;
   activeEntity: EntitySelection | null;
   viewMode: 'clients' | 'entity';
@@ -28,17 +29,24 @@ export default class GreenVilleClient extends React.Component<
     this.state = {
       selectedClientId: null,
       selectedClientTermGuid: null,
+      selectedClientDocCenterTermGuid: null,
       selectedClientName: null,
       activeEntity: null,
       viewMode: 'clients'
     };
   }
 
-  private handleSelectClient = (id: number, termGuid: string, name: string): void => {
-    console.log(`${DEBUG_PREFIX} App selected client`, { id, termGuid, name });
+  private handleSelectClient = (
+    id: number,
+    termGuid: string,
+    name: string,
+    docCenterTermGuid?: string | null
+  ): void => {
+    console.log(`${DEBUG_PREFIX} App selected client`, { id, termGuid, name, docCenterTermGuid });
     this.setState({
       selectedClientId: id,
       selectedClientTermGuid: termGuid,
+      selectedClientDocCenterTermGuid: docCenterTermGuid || null,
       selectedClientName: name,
       activeEntity: null,
       viewMode: 'clients'
@@ -86,6 +94,7 @@ export default class GreenVilleClient extends React.Component<
     const {
       selectedClientId,
       selectedClientTermGuid,
+      selectedClientDocCenterTermGuid,
       selectedClientName,
       activeEntity,
       viewMode
@@ -130,6 +139,7 @@ export default class GreenVilleClient extends React.Component<
             webUrl={webUrl}
             selectedClientId={selectedClientId}
             selectedClientTermGuid={selectedClientTermGuid}
+            selectedClientDocCenterTermGuid={selectedClientDocCenterTermGuid}
             selectedClientName={selectedClientName}
             onSelectClient={this.handleSelectClient}
             onEntityOpen={this.handleOpenEntity}

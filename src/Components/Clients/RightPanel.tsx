@@ -15,6 +15,7 @@ interface RightPanelProps {
   webUrl: string;
   clientId: number | null;
   clientTermGuid: string | null;
+  clientDocCenterTermGuid: string | null;
   clientName?: string | null; // NEW: Added clientName prop
   onEntityOpen?: (entity: EntitySelection) => void;
 }
@@ -22,7 +23,8 @@ interface RightPanelProps {
 const RightPanel: React.FC<RightPanelProps> = ({ 
   webUrl, 
   clientId, 
-  clientTermGuid, 
+  clientTermGuid,
+  clientDocCenterTermGuid,
   clientName, // NEW: Destructured clientName
   onEntityOpen 
 }) => {
@@ -46,7 +48,14 @@ const RightPanel: React.FC<RightPanelProps> = ({
         return <SummaryTab webUrl={webUrl} clientId={clientId} clientName={clientName} />;
 
       case 'Documents':
-        return <DocumentsTab webUrl={webUrl} clientId={clientId} clientName={clientName} />;
+        return (
+          <DocumentsTab
+            webUrl={webUrl}
+            clientId={clientId}
+            clientTermGuid={clientDocCenterTermGuid}
+            clientName={clientName}
+          />
+        );
 
       case 'Tasks':
         return clientTermGuid ? (

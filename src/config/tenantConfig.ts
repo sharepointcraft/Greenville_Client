@@ -308,11 +308,15 @@ const extractTermLabelFromPayload = (payload: any): string | undefined => {
 const fetchTermLabelByGuid = async (
   webUrl: string,
   termSetId: string,
-  guid: string
+  guid: string,
+  scope: TermStoreScope = 'root'
 ): Promise<string | undefined> => {
-  const apiWebUrl = resolveApiWebUrl(webUrl);
+  const termStore = getTermStoreConfig(scope);
+  const apiWebUrl = scope === 'docCenter'
+    ? TENANT_CONFIG.sites.docCenter.replace(/\/+$/, '')
+    : resolveApiWebUrl(webUrl);
   const endpoints = [
-    `${apiWebUrl}/_api/v2.1/termstore/groups('${TENANT_CONFIG.termStore.groupId}')/sets('${termSetId}')/terms('${guid}')`,
+    `${apiWebUrl}/_api/v2.1/termstore/groups('${termStore.groupId}')/sets('${termSetId}')/terms('${guid}')`,
     `${apiWebUrl}/_api/v2.1/termstore/sets('${termSetId}')/terms('${guid}')`
   ];
 
@@ -342,7 +346,8 @@ const fetchTermLabelByGuid = async (
 export const fetchTermLabelMap = async (
   webUrl: string,
   termSetId: string,
-  targetGuids?: Set<string>
+  targetGuids?: Set<string>,
+  scope: TermStoreScope = 'root'
 ): Promise<Record<string, string>> => {
   const wanted = targetGuids
     ? new Set(Array.from(targetGuids).map(g => g.toLowerCase()))
@@ -350,7 +355,7 @@ export const fetchTermLabelMap = async (
 
   const labels: Record<string, string> = {};
   const visitedUrls = new Set<string>();
-  let url: string | undefined = buildTermSetTermsApiUrl(webUrl, termSetId);
+  let url: string | undefined = buildTermSetTermsApiUrl(webUrl, termSetId, scope);
 
   while (url && !visitedUrls.has(url)) {
     visitedUrls.add(url);
@@ -393,7 +398,7 @@ export const fetchTermLabelMap = async (
     if (unresolvedGuids.length) {
       await Promise.all(
         unresolvedGuids.map(async guid => {
-          const label = await fetchTermLabelByGuid(webUrl, termSetId, guid);
+          const label = await fetchTermLabelByGuid(webUrl, termSetId, guid, scope);
           if (label) {
             labels[guid] = String(label);
           }
