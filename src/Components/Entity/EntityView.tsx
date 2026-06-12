@@ -14,6 +14,8 @@ import {
   type EntityPanelTab
 } from '../../config/tenantConfig';
 
+const DEBUG_PREFIX = '[Greenville Debug]';
+
 type EntityTabKey = EntityPanelTab;
 
 interface EntityViewProps {
@@ -116,6 +118,7 @@ const EntityView: React.FC<EntityViewProps> = ({
   const loadEntities = React.useCallback(async () => {
     try {
       if (cancelledRef.current) return;
+      console.log(`${DEBUG_PREFIX} Entity view list load started`, { initialEntity });
       setLoadingEntities(true);
 
       const fetchJson = async (url: string) => {
@@ -196,6 +199,10 @@ const EntityView: React.FC<EntityViewProps> = ({
 
       if (cancelledRef.current) return;
 
+      console.log(`${DEBUG_PREFIX} Entity view list loaded`, {
+        count: list.length,
+        entities: list
+      });
       setEntities(list);
       setSelectedEntity(() => {
         const current = selectedEntityRef.current;
@@ -232,6 +239,7 @@ const EntityView: React.FC<EntityViewProps> = ({
   }, [loadEntities]);
 
   const handleSelectEntity = (entity: EntitySelection): void => {
+    console.log(`${DEBUG_PREFIX} Entity view entity clicked`, entity);
     setSelectedEntity(entity);
     selectedEntityRef.current = entity;
     onEntityChange?.(entity);
@@ -375,7 +383,13 @@ const EntityView: React.FC<EntityViewProps> = ({
                   className={`${rightPanelStyles.tab} ${
                     activeTab === tab ? rightPanelStyles.activeTab : ''
                   }`}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    console.log(`${DEBUG_PREFIX} Entity panel tab clicked`, {
+                      tab,
+                      selectedEntity
+                    });
+                    setActiveTab(tab);
+                  }}
                 >
                   {tab}
                 </button>

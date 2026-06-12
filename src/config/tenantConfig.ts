@@ -117,13 +117,17 @@ const REALITY_CRAFT = {
       relatedClient: 'RelatedClient',
       relatedEntityTaxId: 'RelatedEntityOWSTAXID',
       relatedEntityTaxIdFallback: 'owstaxIdRelatedEntity',
-      relatedEntity: 'RelatedEntity'
+      relatedEntity: 'RelatedEntity',
+      relatedBankTaxId: 'RelatedBankOWSTAXID',
+      relatedBank: 'RelatedBank',
+      fileName: 'FileName',
+      originalPath: 'OriginalPath'
     },
     selectProperties: {
       documents:
-        'Title,Path,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity',
+        'Title,Filename,FileName,Path,OriginalPath,LastModifiedTime,ParentLink,SiteTitle,FileType,Author,Editor,ModifiedBy,RelatedClient,RelatedClientOWSTAXID,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity,RelatedBank,RelatedBankOWSTAXID',
       documentsWithRelatedClient:
-        'Title,Path,LastModifiedTime,ParentLink,SiteTitle,RelatedClientOWSTAXID,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity,Author,Editor,ModifiedBy'
+        'Title,Filename,FileName,Path,OriginalPath,LastModifiedTime,ParentLink,SiteTitle,FileType,RelatedClient,RelatedClientOWSTAXID,RelatedEntity,RelatedEntityOWSTAXID,owstaxIdRelatedEntity,RelatedBank,RelatedBankOWSTAXID,Author,Editor,ModifiedBy'
     }
   },
   ui: {
@@ -172,11 +176,19 @@ const GREENVILLE = {
     docCenter: 'https://greenvilleptrs.sharepoint.com/sites/DocCenter'
   },
   termStore: {
-    groupId: '35fa5400-bc14-40e7-97f0-71b8ab5d5409',
+    groupId: 'fad55415-141b-4377-a339-cac288059705',
     sets: {
-      clients: 'c303ee9c-f01a-40d9-8ef8-18778e0ecc13',
-      entities: '29b96c62-c253-46e1-8d72-41b0d2ab86ec',
-      banks: '6be8631f-bec1-46ba-b4cf-2e3704aeafbb'
+      clients: '5227f961-745e-485e-8b00-6926a34e1e4c',
+      entities: 'afc717cf-76b7-4396-bb17-5cefe5657acc',
+      banks: '40ab7100-16ab-4c48-9fb2-5d4c6f0bb2bf'
+    }
+  },
+  docCenterTermStore: {
+    groupId: '9135fbab-7f71-41dc-bf6a-e81a341680f6',
+    sets: {
+      clients: 'c517f55d-34e2-4fe8-ae43-83d1b4e1b8ae',
+      entities: '011ce6e6-3ba9-4d97-8d3d-191c8e4b23a8',
+      banks: 'de4bea77-b270-4640-874f-d4fee95f5ef4'
     }
   },
   lists: {
@@ -217,6 +229,16 @@ const GREENVILLE = {
 
 export const TENANT_CONFIG = isGreenville ? GREENVILLE : REALITY_CRAFT;
 
+export type TermStoreScope = 'root' | 'docCenter';
+
+export const getTermStoreConfig = (scope: TermStoreScope = 'root') => {
+  if (scope === 'docCenter' && 'docCenterTermStore' in TENANT_CONFIG) {
+    return TENANT_CONFIG.docCenterTermStore;
+  }
+
+  return TENANT_CONFIG.termStore;
+};
+
 const resolveApiWebUrl = (webUrl: string): string => {
   const configured = TENANT_CONFIG.sites.prodHome.replace(/\/+$/, '');
   if (!webUrl) {
@@ -240,8 +262,18 @@ const resolveApiWebUrl = (webUrl: string): string => {
 export const buildListItemsApiUrl = (webUrl: string, listTitle: string): string =>
   `${resolveApiWebUrl(webUrl)}/_api/web/lists/getByTitle('${listTitle}')/items`;
 
-export const buildTermSetTermsApiUrl = (webUrl: string, termSetId: string): string =>
-  `${resolveApiWebUrl(webUrl)}/_api/v2.1/termstore/groups('${TENANT_CONFIG.termStore.groupId}')/sets('${termSetId}')/terms`;
+export const buildTermSetTermsApiUrl = (
+  webUrl: string,
+  termSetId: string,
+  scope: TermStoreScope = 'root'
+): string => {
+  const termStore = getTermStoreConfig(scope);
+  const apiWebUrl = scope === 'docCenter'
+    ? TENANT_CONFIG.sites.docCenter.replace(/\/+$/, '')
+    : resolveApiWebUrl(webUrl);
+
+  return `${apiWebUrl}/_api/v2.1/termstore/groups('${termStore.groupId}')/sets('${termSetId}')/terms`;
+};
 
 const getODataNextLink = (payload: any): string | undefined => {
   if (!payload || typeof payload !== 'object') {

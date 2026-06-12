@@ -6,6 +6,8 @@ import {
   fetchTermLabelMap
 } from '../../../config/tenantConfig';
 
+const DEBUG_PREFIX = '[Greenville Debug]';
+
 export interface EntitySelection {
   id?: number;
   termGuid: string;
@@ -121,6 +123,7 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
 
   const loadEntities = async () => {
     try {
+      console.log(`${DEBUG_PREFIX} Entity list load started`, { clientTermGuid });
       setLoading(true);
 
       const fetchJson = async (url: string) => {
@@ -150,6 +153,10 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
       });
 
       if (!matchedEntities.length) {
+        console.log(`${DEBUG_PREFIX} Entity list loaded empty`, {
+          clientTermGuid,
+          rawEntities: data.value || []
+        });
         setEntities([]);
         return;
       }
@@ -211,6 +218,11 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
       );
 
       unique.sort((a, b) => a.label.localeCompare(b.label));
+      console.log(`${DEBUG_PREFIX} Entity list loaded`, {
+        clientTermGuid,
+        count: unique.length,
+        entities: unique
+      });
       setEntities(unique);
     } catch (err) {
       console.error('Entities load error', err);
@@ -222,6 +234,7 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
 
   React.useEffect(() => {
     if (!clientTermGuid) {
+      console.log(`${DEBUG_PREFIX} Entity list skipped, no client term guid`);
       setEntities([]);
       setLoading(false);
       return;
@@ -247,7 +260,10 @@ const EntitiesTab: React.FC<EntitiesTabProps> = ({
             key={entity.termGuid}
             type="button"
             className={styles.entityButton}
-            onClick={() => onEntityClick?.(entity)}
+            onClick={() => {
+              console.log(`${DEBUG_PREFIX} Entity clicked`, entity);
+              onEntityClick?.(entity);
+            }}
           >
             {entity.label}
           </button>

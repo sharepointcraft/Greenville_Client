@@ -5,6 +5,9 @@ import EntityView from '../../../Components/Entity/EntityView';
 import ClientView from '../../../Components/Clients/ClientView';
 import type { EntitySelection } from '../../../Components/Clients/RightPanelTabs/EntitiesTab';
 import { TENANT_CONFIG } from '../../../config/tenantConfig';
+import { loadGreenvilleMetadataCache } from '../../../services/metadataCacheService';
+
+const DEBUG_PREFIX = '[Greenville Debug]';
 
 interface IGreenVilleClientState {
   selectedClientId: number | null;
@@ -32,6 +35,7 @@ export default class GreenVilleClient extends React.Component<
   }
 
   private handleSelectClient = (id: number, termGuid: string, name: string): void => {
+    console.log(`${DEBUG_PREFIX} App selected client`, { id, termGuid, name });
     this.setState({
       selectedClientId: id,
       selectedClientTermGuid: termGuid,
@@ -42,16 +46,22 @@ export default class GreenVilleClient extends React.Component<
   };
 
   private handleOpenEntity = (entity: EntitySelection): void => {
+    console.log(`${DEBUG_PREFIX} App opened entity from client view`, entity);
     this.setState({ activeEntity: entity, viewMode: 'entity' });
   };
 
   private handleEntityChange = (entity: EntitySelection): void => {
+    console.log(`${DEBUG_PREFIX} App selected entity`, entity);
     this.setState({ activeEntity: entity });
   };
 
   public componentDidMount(): void {
+    console.log(`${DEBUG_PREFIX} App mounted`, { webUrl: this.props.webUrl });
     // Hide SharePoint chrome controls
     this.hideArrows();
+    void loadGreenvilleMetadataCache(this.props.webUrl).catch(error => {
+      console.warn('Greenville metadata cache warmup failed', error);
+    });
     
     // Hide on DOM changes
     this.observer = new MutationObserver(() => this.hideArrows());
@@ -90,14 +100,20 @@ export default class GreenVilleClient extends React.Component<
           <button
             type="button"
             className={`${styles.topTab} ${viewMode === 'clients' ? styles.topTabActive : ''}`}
-            onClick={() => this.setState({ viewMode: 'clients' })}
+            onClick={() => {
+              console.log(`${DEBUG_PREFIX} Top tab clicked`, { viewMode: 'clients' });
+              this.setState({ viewMode: 'clients' });
+            }}
           >
             {clientsLabel}
           </button>
           <button
             type="button"
             className={`${styles.topTab} ${viewMode === 'entity' ? styles.topTabActive : ''}`}
-            onClick={() => this.setState({ viewMode: 'entity' })}
+            onClick={() => {
+              console.log(`${DEBUG_PREFIX} Top tab clicked`, { viewMode: 'entity' });
+              this.setState({ viewMode: 'entity' });
+            }}
           >
             {entityLabel}
           </button>

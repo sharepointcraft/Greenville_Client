@@ -6,6 +6,8 @@ import TasksTab from './RightPanelTabs/TasksTab';
 import EntitiesTab, { EntitySelection } from './RightPanelTabs/EntitiesTab';
 import { TENANT_CONFIG, type ClientPanelTab } from '../../config/tenantConfig';
 
+const DEBUG_PREFIX = '[Greenville Debug]';
+
 const tabs = TENANT_CONFIG.ui.tabs.clientPanel;
 type TabKey = ClientPanelTab;
 
@@ -88,7 +90,15 @@ const RightPanel: React.FC<RightPanelProps> = ({
             className={`${styles.tab} ${
               activeTab === tab ? styles.activeTab : ''
             }`}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              console.log(`${DEBUG_PREFIX} Client panel tab clicked`, {
+                tab,
+                clientId,
+                clientTermGuid,
+                clientName
+              });
+              setActiveTab(tab);
+            }}
           >
             {tab}
           </button>

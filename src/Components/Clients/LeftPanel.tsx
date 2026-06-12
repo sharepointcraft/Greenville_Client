@@ -6,6 +6,8 @@ import {
   fetchTermLabelMap
 } from '../../config/tenantConfig';
 
+const DEBUG_PREFIX = '[Greenville Debug]';
+
 interface LeftPanelProps {
   webUrl: string;
   selectedClientId: number | null;
@@ -134,6 +136,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const loadClientsFromTerms = async () => {
     try {
+      console.log(`${DEBUG_PREFIX} Client list load started`);
       const listBaseUrl = buildListItemsApiUrl(
         webUrl,
         TENANT_CONFIG.lists.clients.title
@@ -231,6 +234,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         .filter(Boolean);
 
       if (!usedTerms.length) {
+        console.log(`${DEBUG_PREFIX} Client list loaded empty`, { rawItems: listData.value || [] });
         setItems([]);
         return;
       }
@@ -278,10 +282,15 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
 
+      console.log(`${DEBUG_PREFIX} Client list loaded`, {
+        count: finalItems.length,
+        clients: finalItems
+      });
       setItems(finalItems);
 
       if (finalItems.length && selectedClientId === null) {
         const first = finalItems[0];
+        console.log(`${DEBUG_PREFIX} Client auto-selected`, first);
         onSelect(first.id, first.termGuid, first.label);
       }
     } catch (err) {
@@ -333,7 +342,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         <button
           className={styles.addButton}
           type="button"
-          onClick={() => setShowAddPopup(true)}
+          onClick={() => {
+            console.log(`${DEBUG_PREFIX} Add client clicked`);
+            setShowAddPopup(true);
+          }}
         >
           + Add New
         </button>
@@ -347,7 +359,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             className={`${styles.clientItem} ${
               client.id === selectedClientId ? styles.active : ''
             }`}
-            onClick={() => onSelect(client.id, client.termGuid, client.label)}
+            onClick={() => {
+              console.log(`${DEBUG_PREFIX} Client clicked`, client);
+              onSelect(client.id, client.termGuid, client.label);
+            }}
           >
             {client.label}
           </button>
