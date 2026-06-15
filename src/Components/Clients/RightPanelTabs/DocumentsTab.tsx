@@ -48,8 +48,12 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientTer
     key: 'modifiedDate',
     direction: 'desc'
   });
+  const loadRequestRef = React.useRef(0);
 
   const loadDocuments = React.useCallback(async () => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+
     try {
       console.log(`${DEBUG_PREFIX} Client documents load started`, {
         clientId,
@@ -60,6 +64,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientTer
       setError(null);
 
       const rootClientLabel = await getRootClientLabel(webUrl, clientId, clientName);
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+
       if (!rootClientLabel) {
         console.log(`${DEBUG_PREFIX} Client documents skipped, empty root client label`, {
           clientId,
@@ -75,6 +83,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientTer
         rootClientLabel,
         clientTermGuid
       );
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+
       const mappedDocuments = result.documents.map(mapDocument);
       console.log(`${DEBUG_PREFIX} Client documents loaded`, {
         clientId,
@@ -87,12 +99,19 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ webUrl, clientId, clientTer
         executedQuery: result.executedQuery
       });
       setDocuments(mappedDocuments);
+      setActiveSubTab(TENANT_CONFIG.ui.documents.clientStatusFilters[0]);
     } catch (err) {
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+
       console.error('Client document load error', err);
       setError(err instanceof Error ? err.message : 'Failed to load documents');
       setDocuments([]);
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [clientId, clientName, clientTermGuid, webUrl]);
 

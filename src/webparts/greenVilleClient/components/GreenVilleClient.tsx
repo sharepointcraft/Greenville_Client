@@ -6,6 +6,7 @@ import ClientView from '../../../Components/Clients/ClientView';
 import type { EntitySelection } from '../../../Components/Clients/RightPanelTabs/EntitiesTab';
 import { TENANT_CONFIG } from '../../../config/tenantConfig';
 import { loadGreenvilleMetadataCache } from '../../../services/metadataCacheService';
+import { getCachedDocCenterDocuments } from '../../../services/docCenterSearchService';
 
 const DEBUG_PREFIX = '[Greenville Debug]';
 
@@ -67,8 +68,11 @@ export default class GreenVilleClient extends React.Component<
     console.log(`${DEBUG_PREFIX} App mounted`, { webUrl: this.props.webUrl });
     // Hide SharePoint chrome controls
     this.hideArrows();
-    void loadGreenvilleMetadataCache(this.props.webUrl).catch(error => {
+    loadGreenvilleMetadataCache(this.props.webUrl).catch(error => {
       console.warn('Greenville metadata cache warmup failed', error);
+    });
+    getCachedDocCenterDocuments().catch(error => {
+      console.warn('Greenville document cache warmup failed', error);
     });
     
     // Hide on DOM changes
@@ -128,13 +132,7 @@ export default class GreenVilleClient extends React.Component<
           </button>
         </div>
 
-        {showEntity ? (
-          <EntityView
-            webUrl={webUrl}
-            initialEntity={activeEntity}
-            onEntityChange={this.handleEntityChange}
-          />
-        ) : (
+        <div style={{ display: showEntity ? 'none' : 'contents' }}>
           <ClientView
             webUrl={webUrl}
             selectedClientId={selectedClientId}
@@ -144,7 +142,14 @@ export default class GreenVilleClient extends React.Component<
             onSelectClient={this.handleSelectClient}
             onEntityOpen={this.handleOpenEntity}
           />
-        )}
+        </div>
+        <div style={{ display: showEntity ? 'contents' : 'none' }}>
+          <EntityView
+            webUrl={webUrl}
+            initialEntity={activeEntity}
+            onEntityChange={this.handleEntityChange}
+          />
+        </div>
       </div>
     );
   }

@@ -159,7 +159,7 @@ const REALITY_CRAFT = {
     }
   },
   queryLimits: {
-    listTop: 5000
+    listTop: 50000
   },
   patterns: {
     guid: /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g,
@@ -217,7 +217,7 @@ const GREENVILLE = {
       //allItemsUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Tasks/AllItems.aspx',
       allItemsUrl: 'https://greenvilleptrs.sharepoint.com/Lists/Tasks/AllItems.aspx',
       //newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/sites/Prod-Home/Lists/Tasks/NewForm.aspx?ContentTypeId=0x0108000B261A6A5642A046874DBD93AC285C6F007A611AD860405A4AA38BA773987F36E4&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2Fsites%2FProd-Home%2FLists%2FTasks%2FAllItems.aspx&IsDlg=1'
-       newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/_layouts/15/listform.aspx?PageType=8&ListId=%7B8069C902-70F4-4B95-A932-5C8E6DE07266%7D&RootFolder=%2FLists%2FTasks&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2FLists%2FTasks%2FAllItems.aspx&ContentTypeId=0x010800DBE31308D0237C41B50F1B93F41C5410'
+       newItemFormUrl: 'https://greenvilleptrs.sharepoint.com/_layouts/15/listform.aspx?PageType=8&ListId=%7B8069C902-70F4-4B95-A932-5C8E6DE07266%7D&RootFolder=%2FLists%2FTasks&Source=https%3A%2F%2Fgreenvilleptrs.sharepoint.com%2FLists%2FTasks%2FAllItems.aspx&ContentTypeId=0x01080065AF3F07E2CFD04E8F8AA095E801D7EC006EBD11B7C9771E408DA04862199AC4E7'
     }
   },
   libraries: {

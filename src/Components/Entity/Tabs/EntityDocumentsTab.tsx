@@ -47,8 +47,12 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
   const [activeActivity, setActiveActivity] = React.useState<string>(
     TENANT_CONFIG.libraries.entityActivityFilters[0]
   );
+  const loadRequestRef = React.useRef(0);
 
   const loadDocuments = React.useCallback(async () => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+
     if (!entity?.label) {
       console.log(`${DEBUG_PREFIX} Entity documents skipped, no entity label`, { entity });
       setDocuments([]);
@@ -67,6 +71,10 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
         entity.label,
         entity.docCenterTermGuid
       );
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+
       const mappedDocuments = result.documents.map(mapDocument);
       console.log(`${DEBUG_PREFIX} Entity documents loaded`, {
         entity,
@@ -78,11 +86,17 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
       setDocuments(mappedDocuments);
       setActiveActivity(TENANT_CONFIG.libraries.entityActivityFilters[0]);
     } catch (err) {
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+
       console.error('Entity document load error', err);
       setError(err instanceof Error ? err.message : 'Failed to load documents');
       setDocuments([]);
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [entity?.label, entity?.docCenterTermGuid, webUrl]);
 

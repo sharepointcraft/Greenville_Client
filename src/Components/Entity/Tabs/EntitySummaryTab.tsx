@@ -346,7 +346,7 @@ const EntitySummaryTab: React.FC<EntitySummaryTabProps> = ({ webUrl, entity }) =
       };
 
       const minimalSummarySelect =
-        'Id,Title,AccountNo,AgreementDated,Bank1,Beneficiary/Title,Corporate_x0020_Trustee/Title,Created,EntityIncorporationFormationDate,EntityDissolved,DistributionAdvisor,Entity,EntityDesc,EntityID,EntityShortName,EntityStatus,EntityType,FederalTaxID,Grantor,InvestmentAdvisor,InvestmentManager,LastAnnualMeetingDate,EntityAliases,ManagedBy,Manager/Title,ManagerLimits,Members/Title,Modified,Notes,Ownership,Parent/Title,PowerOfApptmt,PurposeClassification,WorkAddress,RegisteredAgent/Title,RegisteredMailingAddress,RelatedClient,RelatedEntity,RoutingNo,Settler/Title,StateIDNumber,EntityJurisdiction,SuccessorTrustee,Support,TaxPreparer,TrustSubType,TrustType,Trustee/Title,TrusteeRemoverCommittee,Author/Title,Editor/Title';
+        'Id,Title,AccountNo,AgreementDated,Bank1,Beneficiary/Title,Corporate_x0020_Trustee/Title,Created,EntityIncorporationFormationDate,EntityDissolved,DistributionAdvisor,Entity,EntityDesc,EntityID,EntityShortName,EntityStatus,EntityType,FederalTaxID,Grantor,InvestmentAdvisor,InvestmentManager,LastAnnualMeetingDate,EntityAliases,ManagedBy,Manager/Title,ManagerLimits,Members/Title,Modified,Ownership,Parent/Title,PowerOfApptmt,PurposeClassification,WorkAddress/Title,RegisteredMailingAddress,RelatedClient,RelatedEntity,RoutingNo,Settler/Title,StateIDNumber,EntityJurisdiction,SuccessorTrustee,Support,TaxPreparer,TrustSubType,TrustType,Trustee/Title,TrusteeRemoverCommittee,Author/Title,Editor/Title';
 
       const minimalSummaryExpand = 'Beneficiary,Corporate_x0020_Trustee,Manager,Members,Parent,RegisteredAgent,Settler,Trustee,Author,Editor';
 

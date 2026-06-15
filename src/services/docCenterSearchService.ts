@@ -117,7 +117,18 @@ const DOC_CENTER_TARGET_LIBRARIES: IDocCenterTargetLibraryConfig[] = [
   { title: 'Foundation', internalName: 'Foundation' },
   { title: 'Finance Tax', internalName: 'Finance%20Tax' }
 ];
-const DOC_CENTER_REST_SCAN_ITEM_LIMIT = 50;
+const rootClientLabelCache = new Map<string, Promise<string>>();
+let docCenterLibrariesPromise: Promise<IDocCenterLibrary[]> | undefined;
+const DOC_CENTER_CACHE_KEY = 'greenville:docCenterDocuments:v1';
+const DOC_CENTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const DOC_CENTER_REST_PAGE_SIZE = TENANT_CONFIG.search.rowLimitExpanded || 1000;
+let docCenterDocumentsCachePromise: Promise<ISearchRowDocument[]> | undefined;
+
+interface IDocCenterDocumentsCache {
+  cachedAt: number;
+  lastSyncedAt: string;
+  documents: ISearchRowDocument[];
+}
 
 const getObjectValue = (item: any, key: string): any => {
   if (!item || typeof item !== 'object') {
@@ -148,122 +159,6 @@ const getDocCenterSiteServerRelativePath = (): string => {
 const getTargetDocCenterLibraryServerRelativeUrl = (library: IDocCenterTargetLibraryConfig): string =>
   `${getDocCenterSiteServerRelativePath()}/${library.internalName}`;
 
-const escapeKqlPhrase = (value: string): string => String(value || '').replace(/"/g, '""');
-
-const buildScope = (): string =>
-  `contentclass:${TENANT_CONFIG.search.contentClassDocumentLibrary} AND path:"${TENANT_CONFIG.libraries.documentCenterPath}"`;
-
-const buildPathScope = (): string =>
-  `path:"${TENANT_CONFIG.libraries.documentCenterPath}"`;
-
-const buildTaxonomyQuery = (
-  kind: TaxonomyKind,
-  label: string,
-  docCenterTermId?: string
-): string => {
-  const props = TENANT_CONFIG.search.managedProperties;
-  const guid = String(docCenterTermId || '').trim().toLowerCase();
-  const guidQueries = guid
-    ? uniqueStrings([
-        guid,
-        `GP0|#${guid}`,
-        `L0|#0${guid}`
-      ]).map(value => `"${escapeKqlPhrase(value)}"`)
-    : [];
-  const normalized = normalizeTaxonomyLabel(label);
-  const labelQueries = uniqueStrings([label, normalized])
-    .filter(Boolean)
-    .map(value => `"${escapeKqlPhrase(value)}"`);
-
-  const fieldQueries: string[] = [];
-
-  if (kind === 'clients') {
-    if (labelQueries.length) {
-      fieldQueries.push(`${props.relatedClient}:(${labelQueries.join(' OR ')})`);
-      fieldQueries.push(`(${labelQueries.join(' OR ')})`);
-    }
-    if (guidQueries.length) {
-      fieldQueries.push(`${props.relatedClientTaxId}:(${guidQueries.join(' OR ')})`);
-    }
-  }
-
-  if (kind === 'entities') {
-    if (labelQueries.length) {
-      fieldQueries.push(`${props.relatedEntity}:(${labelQueries.join(' OR ')})`);
-      fieldQueries.push(`(${labelQueries.join(' OR ')})`);
-    }
-    if (guidQueries.length) {
-      fieldQueries.push(`${props.relatedEntityTaxId}:(${guidQueries.join(' OR ')})`);
-      fieldQueries.push(`${props.relatedEntityTaxIdFallback}:(${guidQueries.join(' OR ')})`);
-    }
-  }
-
-  if (kind === 'banks') {
-    if (labelQueries.length) {
-      fieldQueries.push(`${props.relatedBank}:(${labelQueries.join(' OR ')})`);
-      fieldQueries.push(`(${labelQueries.join(' OR ')})`);
-    }
-    if (guidQueries.length) {
-      fieldQueries.push(`${props.relatedBankTaxId}:(${guidQueries.join(' OR ')})`);
-    }
-  }
-
-  if (!fieldQueries.length) {
-    return buildScope();
-  }
-
-  return `(${fieldQueries.join(' OR ')}) AND ${buildScope()}`;
-};
-
-const selectProperties = (): string =>
-  uniqueStrings([
-    TENANT_CONFIG.search.selectProperties.documents,
-    TENANT_CONFIG.search.selectProperties.documentsWithRelatedClient,
-    TENANT_CONFIG.search.managedProperties.relatedBank,
-    TENANT_CONFIG.search.managedProperties.relatedBankTaxId
-  ]).join(',');
-
-const runSearchQuery = async (
-  query: string,
-  startRow: number = 0
-): Promise<ISearchRowDocument[]> => {
-  const startRowPart = startRow > 0 ? `&startrow=${startRow}` : '';
-  const url =
-    `${TENANT_CONFIG.sites.docCenter}/_api/search/query?querytext='${encodeURIComponent(query)}'` +
-    `&rowlimit=${TENANT_CONFIG.search.rowLimitDefault}${startRowPart}` +
-    `&selectproperties='${selectProperties()}'`;
-
-  debugLog('Search query started', { query, startRow, url });
-
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json;odata=nometadata' }
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`DocCenter search failed (${response.status}): ${detail || response.statusText}`);
-  }
-
-  const payload = await response.json();
-  const rows = payload?.PrimaryQueryResult?.RelevantResults?.Table?.Rows || [];
-  const documents = rows.map(mapSearchRow).filter(Boolean) as ISearchRowDocument[];
-
-  debugLog('Search query completed', {
-    query,
-    startRow,
-    rawRows: rows.length,
-    documents: documents.map(document => ({
-      title: document.title,
-      path: document.path,
-      relatedClient: document.relatedClient,
-      relatedEntity: document.relatedEntity,
-      relatedBank: document.relatedBank
-    }))
-  });
-
-  return documents;
-};
-
 function valuesToDisplayText(values: string[]): string {
   return uniqueStrings(
     values.reduce((labels: string[], value: string) => {
@@ -271,67 +166,6 @@ function valuesToDisplayText(values: string[]): string {
       return labels;
     }, [])
   ).join(', ');
-}
-
-function mapSearchRow(row: any): ISearchRowDocument | null {
-  const cells = row?.Cells || [];
-  const props = TENANT_CONFIG.search.managedProperties;
-  const path = getCellValue(cells, 'Path');
-  const title = getCellValue(cells, 'Title') || getCellValue(cells, props.fileName) || getFileNameFromPath(path);
-
-  if (!path || !title) {
-    return null;
-  }
-
-  const relatedClientValues = [
-    getCellValue(cells, props.relatedClient),
-    getCellValue(cells, props.relatedClientTaxId)
-  ].filter(Boolean);
-  const relatedEntityValues = [
-    getCellValue(cells, props.relatedEntity),
-    getCellValue(cells, props.relatedEntityTaxId),
-    getCellValue(cells, props.relatedEntityTaxIdFallback)
-  ].filter(Boolean);
-  const relatedBankValues = [
-    getCellValue(cells, props.relatedBank),
-    getCellValue(cells, props.relatedBankTaxId)
-  ].filter(Boolean);
-  const lastModified = getCellValue(cells, 'LastModifiedTime');
-  const author = getCellValue(cells, 'Author');
-  const editor = getCellValue(cells, 'Editor');
-  const modifiedBy = getCellValue(cells, 'ModifiedBy') || editor || author;
-  const fileName = getCellValue(cells, 'Filename') || getCellValue(cells, 'FileName') || getFileNameFromPath(path);
-
-  return {
-    title,
-    fileName,
-    fileUrl: path,
-    path,
-    activity: getLibraryNameFromPath(path),
-    status: '',
-    modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
-    modifiedBy: extractUserName(modifiedBy),
-    author: extractUserName(author),
-    editor: extractUserName(editor),
-    relatedClient: valuesToDisplayText(relatedClientValues),
-    relatedEntity: valuesToDisplayText(relatedEntityValues),
-    relatedBank: valuesToDisplayText(relatedBankValues),
-    relatedClientValues,
-    relatedEntityValues,
-    relatedBankValues,
-    metadata: {
-      Title: title,
-      FileName: fileName,
-      Path: path,
-      LastModifiedTime: lastModified,
-      Author: author,
-      Editor: editor,
-      ModifiedBy: modifiedBy,
-      RelatedClient: valuesToDisplayText(relatedClientValues),
-      RelatedEntity: valuesToDisplayText(relatedEntityValues),
-      RelatedBank: valuesToDisplayText(relatedBankValues)
-    }
-  };
 }
 
 const matchesValue = (
@@ -523,6 +357,15 @@ const getKnownDocCenterLibraryTitles = (): string[] =>
   ]);
 
 const getDocCenterDocumentLibraries = async (): Promise<IDocCenterLibrary[]> => {
+  if (docCenterLibrariesPromise) {
+    return docCenterLibrariesPromise;
+  }
+
+  docCenterLibrariesPromise = getDocCenterDocumentLibrariesUncached();
+  return docCenterLibrariesPromise;
+};
+
+async function getDocCenterDocumentLibrariesUncached(): Promise<IDocCenterLibrary[]> {
   if (DOC_CENTER_TARGET_LIBRARIES.length) {
     const targetLibraries = (await Promise.all(DOC_CENTER_TARGET_LIBRARIES.map(getTargetDocCenterLibrary)))
       .filter(Boolean) as IDocCenterLibrary[];
@@ -562,15 +405,24 @@ const getDocCenterDocumentLibraries = async (): Promise<IDocCenterLibrary[]> => 
   });
 
   return Array.from(libraryByTitle.values());
+}
+
+const getModifiedFilter = (modifiedAfter?: string): string => {
+  const filters = ['FileSystemObjectType eq 0'];
+  if (modifiedAfter) {
+    filters.push(`Modified gt datetime'${modifiedAfter.replace(/'/g, "''")}'`);
+  }
+
+  return filters.join(' and ');
 };
 
-const getDocCenterLibraryItemsUrl = (library: IDocCenterLibrary): string =>
+const getDocCenterLibraryItemsUrl = (library: IDocCenterLibrary, modifiedAfter?: string): string =>
   `${TENANT_CONFIG.sites.docCenter}/_api/web/lists(guid'${library.id}')/items?` +
-  `$top=${DOC_CENTER_REST_SCAN_ITEM_LIMIT}&$orderby=Modified desc&$expand=Author,Editor,File`;
+  `$select=*,Author/Title,Editor/Title,File/ServerRelativeUrl,File/Name,File/Title,File/TimeLastModified&$top=${DOC_CENTER_REST_PAGE_SIZE}&$orderby=Modified desc&$filter=${encodeURIComponent(getModifiedFilter(modifiedAfter))}&$expand=Author,Editor,File`;
 
-const getDocCenterLibraryItemsUrlWithoutExpand = (library: IDocCenterLibrary): string =>
+const getDocCenterLibraryItemsUrlWithoutExpand = (library: IDocCenterLibrary, modifiedAfter?: string): string =>
   `${TENANT_CONFIG.sites.docCenter}/_api/web/lists(guid'${library.id}')/items?` +
-  `$top=${DOC_CENTER_REST_SCAN_ITEM_LIMIT}&$orderby=Modified desc`;
+  `$select=*,FieldValuesAsText/Author,FieldValuesAsText/Editor&$top=${DOC_CENTER_REST_PAGE_SIZE}&$orderby=Modified desc&$filter=${encodeURIComponent(getModifiedFilter(modifiedAfter))}&$expand=FieldValuesAsText`;
 
 const mapDocCenterFileItem = (file: any, library: IDocCenterLibrary): ISearchRowDocument | null => {
   const listItem = file?.ListItemAllFields || {};
@@ -580,7 +432,9 @@ const mapDocCenterFileItem = (file: any, library: IDocCenterLibrary): ISearchRow
       FileRef: listItem?.FileRef || file?.ServerRelativeUrl,
       FileLeafRef: listItem?.FileLeafRef || file?.Name,
       Modified: listItem?.Modified || file?.TimeLastModified,
-      Title: listItem?.Title || file?.Title || file?.Name
+      Title: listItem?.Title || file?.Title || file?.Name,
+      Author: file?.Author || listItem?.Author,
+      Editor: file?.ModifiedBy || listItem?.Editor
     },
     library
   );
@@ -589,7 +443,7 @@ const mapDocCenterFileItem = (file: any, library: IDocCenterLibrary): ISearchRow
 const getFolderFilesUrl = (folderServerRelativeUrl: string): string => {
   const serverRelativeUrl = decodeURIComponent(folderServerRelativeUrl).replace(/'/g, "''");
   return `${TENANT_CONFIG.sites.docCenter}/_api/web/GetFolderByServerRelativePath(decodedurl='${serverRelativeUrl}')/Files?` +
-    `$top=${DOC_CENTER_REST_SCAN_ITEM_LIMIT}&$orderby=TimeLastModified desc&$expand=ListItemAllFields`;
+    `$select=*,ListItemAllFields/*,Author/Title,ModifiedBy/Title&$top=${DOC_CENTER_REST_PAGE_SIZE}&$orderby=TimeLastModified desc&$expand=ListItemAllFields,Author,ModifiedBy`;
 };
 
 const getFolderSubfoldersUrl = (folderServerRelativeUrl: string): string => {
@@ -600,13 +454,12 @@ const getFolderSubfoldersUrl = (folderServerRelativeUrl: string): string => {
 
 const getFolderFiles = async (
   library: IDocCenterLibrary,
-  folderServerRelativeUrl: string,
-  remainingLimit: number
+  folderServerRelativeUrl: string
 ): Promise<ISearchRowDocument[]> => {
   const documents: ISearchRowDocument[] = [];
   let url: string | undefined = getFolderFilesUrl(folderServerRelativeUrl);
 
-  while (url && documents.length < remainingLimit) {
+  while (url) {
     debugLog('DocCenter folder files scan page started', {
       library: library.title,
       folderServerRelativeUrl,
@@ -628,8 +481,8 @@ const getFolderFiles = async (
       .map((file: any) => mapDocCenterFileItem(file, library))
       .filter(Boolean) as ISearchRowDocument[];
 
-    documents.push(...pageDocuments.slice(0, remainingLimit - documents.length));
-    url = undefined;
+    documents.push(...pageDocuments);
+    url = getODataNextLink(payload);
   }
 
   debugLog('DocCenter target folder files scan completed', {
@@ -693,12 +546,8 @@ const getTargetDocCenterFolderFiles = async (library: IDocCenterLibrary): Promis
     visitedFolders.add(normalizedFolder);
     documents.push(...await getFolderFiles(
       library,
-      folderServerRelativeUrl,
-      DOC_CENTER_REST_SCAN_ITEM_LIMIT - documents.length
+      folderServerRelativeUrl
     ));
-    if (documents.length >= DOC_CENTER_REST_SCAN_ITEM_LIMIT) {
-      break;
-    }
     queue.push(...await getFolderSubfolders(folderServerRelativeUrl));
   }
 
@@ -720,9 +569,9 @@ const getDocumentModifiedTime = (document: ISearchRowDocument): number => {
 const sortDocumentsByModifiedDesc = (documents: ISearchRowDocument[]): ISearchRowDocument[] =>
   [...documents].sort((a, b) => getDocumentModifiedTime(b) - getDocumentModifiedTime(a));
 
-const getDocCenterLibraryItems = async (library: IDocCenterLibrary): Promise<ISearchRowDocument[]> => {
+const getDocCenterLibraryItems = async (library: IDocCenterLibrary, modifiedAfter?: string): Promise<ISearchRowDocument[]> => {
   const documents: ISearchRowDocument[] = [];
-  let url: string | undefined = getDocCenterLibraryItemsUrl(library);
+  let url: string | undefined = getDocCenterLibraryItemsUrl(library, modifiedAfter);
   let retriedWithoutExpand = false;
 
   while (url) {
@@ -737,7 +586,7 @@ const getDocCenterLibraryItems = async (library: IDocCenterLibrary): Promise<ISe
       if (!retriedWithoutExpand && url.includes('$expand=')) {
         console.warn(`DocCenter expanded library items failed for ${library.title} (${response.status}), retrying without expand:`, detail || response.statusText);
         retriedWithoutExpand = true;
-        url = getDocCenterLibraryItemsUrlWithoutExpand(library);
+        url = getDocCenterLibraryItemsUrlWithoutExpand(library, modifiedAfter);
         continue;
       }
 
@@ -750,8 +599,8 @@ const getDocCenterLibraryItems = async (library: IDocCenterLibrary): Promise<ISe
       .map((item: any) => mapDocCenterListItem(item, library))
       .filter(Boolean) as ISearchRowDocument[];
 
-    documents.push(...pageDocuments.slice(0, DOC_CENTER_REST_SCAN_ITEM_LIMIT - documents.length));
-    url = undefined;
+    documents.push(...pageDocuments);
+    url = getODataNextLink(payload);
   }
 
   debugLog('DocCenter library items scan completed', {
@@ -759,17 +608,17 @@ const getDocCenterLibraryItems = async (library: IDocCenterLibrary): Promise<ISe
     count: documents.length
   });
 
-  if (!documents.length) {
+  if (!documents.length && !modifiedAfter) {
     return getTargetDocCenterFolderFiles(library);
   }
 
   return documents;
 };
 
-const getAllDocCenterDocumentsFromLists = async (): Promise<ISearchRowDocument[]> => {
+const getAllDocCenterDocumentsFromLists = async (modifiedAfter?: string): Promise<ISearchRowDocument[]> => {
   try {
     const libraries = await getDocCenterDocumentLibraries();
-    const pages = await Promise.all(libraries.map(getDocCenterLibraryItems));
+    const pages = await Promise.all(libraries.map(library => getDocCenterLibraryItems(library, modifiedAfter)));
     const documents = sortDocumentsByModifiedDesc(
       pages.reduce((all, page) => all.concat(page), [] as ISearchRowDocument[])
     );
@@ -791,35 +640,176 @@ const getAllDocCenterDocumentsFromLists = async (): Promise<ISearchRowDocument[]
   }
 };
 
-const searchAllDocCenterDocuments = async (): Promise<ISearchRowDocument[]> => {
-  const documents: ISearchRowDocument[] = [];
-  const queries = [buildScope(), buildPathScope()];
-  const pageSize = TENANT_CONFIG.search.rowLimitDefault;
+import { clearAll, getAllDocs, getMeta, putDocs, putMeta } from './docCacheService';
 
-  debugLog('Search all DocCenter documents started', { queries, pageSize });
 
-  for (const query of queries) {
-    for (let startRow = 0; startRow < TENANT_CONFIG.queryLimits.listTop; startRow += pageSize) {
-      const page = await runSearchQuery(query, startRow);
-      documents.push(...page);
+const DOC_CACHE_FULL_LOAD_TTL_MS = 604800000; // 7 days
 
-      if (page.length < pageSize) {
-        break;
-      }
+type IDocCacheMetaKey = 'fullLoadTs' | 'syncTs';
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+async function maybeEnsureFullLoadFreshness(): Promise<void> {
+  try {
+    const fullLoadTs = await getMeta('fullLoadTs');
+    if (!isFiniteNumber(fullLoadTs)) return;
+    if (Date.now() - fullLoadTs > DOC_CACHE_FULL_LOAD_TTL_MS) {
+      await clearAll();
     }
+  } catch (e) {
+    console.warn('DocCenter cache freshness check failed', e);
+  }
+}
 
-    if (documents.length) {
-      break;
+function tryCreateChannel(): BroadcastChannel | undefined {
+  try {
+    if (typeof window === 'undefined') return undefined;
+    const BC = (window as any).BroadcastChannel;
+    if (!BC) return undefined;
+    return new BC('docCacheChannel') as BroadcastChannel;
+  } catch {
+    return undefined;
+  }
+}
+
+let broadcastChannel: BroadcastChannel | undefined = undefined;
+
+function broadcastCacheUpdated(deltaResults: ISearchRowDocument[]): void {
+  try {
+    broadcastChannel?.postMessage({ type: 'CACHE_UPDATED', docs: deltaResults });
+  } catch {
+    // skip silently
+  }
+}
+
+function broadcastFullReload(): void {
+  try {
+    broadcastChannel?.postMessage({ type: 'FULL_RELOAD' });
+  } catch {
+    // skip silently
+  }
+}
+
+const mergeDocumentsByPath = (
+  existingDocuments: ISearchRowDocument[],
+  changedDocuments: ISearchRowDocument[]
+): ISearchRowDocument[] => {
+  const byPath = new Map<string, ISearchRowDocument>();
+  existingDocuments.forEach(document => {
+    byPath.set(document.path.toLowerCase(), document);
+  });
+  changedDocuments.forEach(document => {
+    byPath.set(document.path.toLowerCase(), document);
+  });
+  return sortDocumentsByModifiedDesc(Array.from(byPath.values()));
+};
+
+const fetchAllDocsFullLoad = async (): Promise<ISearchRowDocument[]> => {
+  return await getAllDocCenterDocumentsFromLists();
+};
+
+const fetchAllDocsDelta = async (syncIso: string): Promise<ISearchRowDocument[]> => {
+  // Existing getAllDocCenterDocumentsFromLists supports modifiedAfter and uses the REST filter in getModifiedFilter
+  return await getAllDocCenterDocumentsFromLists(syncIso);
+};
+
+const loadFullDocCenterDocumentsCache = async (): Promise<ISearchRowDocument[]> => {
+  const documents = await fetchAllDocsFullLoad();
+  await putDocs(documents.map(d => ({ ...(d as any), Id: (d as any).Id ?? (d as any).id ?? d.path })));
+  await putMeta('fullLoadTs', Date.now());
+  await putMeta('syncTs', Date.now());
+  return documents;
+};
+
+const syncDocCenterDocumentsDelta = async (existing: ISearchRowDocument[]): Promise<ISearchRowDocument[]> => {
+  const syncTs = await getMeta('syncTs');
+  if (!isFiniteNumber(syncTs)) return existing;
+
+  const iso = new Date(syncTs).toISOString();
+  const deltaResults = await fetchAllDocsDelta(iso);
+  if (!deltaResults.length) return existing;
+
+  await putDocs(deltaResults.map(d => ({ ...(d as any), Id: (d as any).Id ?? (d as any).id ?? d.path })));
+
+  const merged = mergeDocumentsByPath(existing, deltaResults);
+  broadcastCacheUpdated(deltaResults);
+
+  await putMeta('syncTs', Date.now());
+  return merged;
+};
+
+export const getCachedDocCenterDocuments = async (): Promise<ISearchRowDocument[]> => {
+  if (typeof window !== 'undefined' && !broadcastChannel) {
+    broadcastChannel = tryCreateChannel();
+
+    // BroadcastChannel listener (best-effort)
+    try {
+      if (broadcastChannel) {
+        broadcastChannel.onmessage = (event: MessageEvent) => {
+          const data = (event as any)?.data;
+          if (!data?.type) return;
+
+          if (data.type === 'CACHE_UPDATED') {
+            // We intentionally do not fetch/merge here to keep DocumentsTab UI logic unchanged.
+            // Next calls to getCachedDocCenterDocuments will read from IndexedDB.
+          }
+
+          if (data.type === 'FULL_RELOAD') {
+            // Clear promise so next request will re-read from IndexedDB.
+            docCenterDocumentsCachePromise = undefined;
+          }
+        };
+      }
+    } catch {
+      // ignore
     }
   }
 
-  debugLog('Search all DocCenter documents completed', {
-    count: documents.length,
-    documents: documents.map(document => ({ title: document.title, path: document.path }))
-  });
+  await maybeEnsureFullLoadFreshness();
 
-  return documents;
+  if (!docCenterDocumentsCachePromise) {
+    docCenterDocumentsCachePromise = (async () => {
+      const cachedDocs = await getAllDocs();
+      const docs = (cachedDocs || []) as ISearchRowDocument[];
+
+      if (docs.length) {
+        // background delta sync
+        void (async () => {
+          try {
+            const merged = await syncDocCenterDocumentsDelta(docs);
+            // eslint-disable-next-line require-atomic-updates
+            docCenterDocumentsCachePromise = Promise.resolve(merged);
+          } catch (e) {
+            console.warn('DocCenter delta sync failed', e);
+          }
+        })();
+
+        return docs;
+      }
+
+      return loadFullDocCenterDocumentsCache();
+    })();
+  }
+
+  return (await docCenterDocumentsCachePromise) as ISearchRowDocument[];
 };
+
+
+export const refreshDocCenterDocumentsCache = async (): Promise<void> => {
+  try {
+    await clearAll();
+  } catch {
+    // ignore
+  }
+
+  const promise = loadFullDocCenterDocumentsCache();
+  docCenterDocumentsCachePromise = promise;
+  await promise;
+  broadcastFullReload();
+};
+
 
 const getSiteWebUrlFromFileUrl = (fileUrl: string): string => {
   const url = new URL(fileUrl);
@@ -851,11 +841,12 @@ const getFieldValueByCandidates = (item: any, candidates: string[]): any[] => {
     .filter(Boolean);
 };
 
-const normalizeFieldKey = (key: string): string =>
-  String(key || '')
+function normalizeFieldKey(key: string): string {
+  return String(key || '')
     .toLowerCase()
     .replace(/_x0020_/g, '')
     .replace(/[^a-z0-9]/g, '');
+}
 
 const getFieldsContaining = (item: any, tokens: string[]): any[] => {
   if (!item || typeof item !== 'object') {
@@ -927,7 +918,7 @@ const extractRelatedValuesFromItem = (
   ].map(serializeMetadataValue))
 });
 
-const mapDocCenterListItem = (item: any, library: IDocCenterLibrary): ISearchRowDocument | null => {
+function mapDocCenterListItem(item: any, library: IDocCenterLibrary): ISearchRowDocument | null {
   const serverRelativePath = String(
     item?.FileRef ||
     item?.File?.ServerRelativeUrl ||
@@ -947,8 +938,19 @@ const mapDocCenterListItem = (item: any, library: IDocCenterLibrary): ISearchRow
   }
 
   const relatedValues = extractRelatedValuesFromItem(item);
-  const author = String(item?.Author?.Title || item?.Author || '');
-  const editor = String(item?.Editor?.Title || item?.Editor || '');
+
+  const extractName = (raw: any): string => {
+    if (typeof raw === 'object' && raw !== null) {
+      return String(raw.Title || raw.name || raw.Email || raw.EMail || '');
+    }
+    return String(raw || '');
+  };
+
+  const authorObj = item?.Author || item?.FieldValuesAsText?.Author || '';
+  const editorObj = item?.Editor || item?.ModifiedBy || item?.FieldValuesAsText?.Editor || '';
+
+  const author = extractName(authorObj);
+  const editor = extractName(editorObj);
   const modifiedBy = editor || author;
   const modified = String(item?.Modified || '');
 
@@ -982,14 +984,14 @@ const mapDocCenterListItem = (item: any, library: IDocCenterLibrary): ISearchRow
       RelatedBank: valuesToDisplayText(relatedValues.relatedBankValues)
     }
   };
-};
+}
 
 const getListItemMetadata = async (fileUrl: string): Promise<IDocumentListItemMetadata | undefined> => {
   try {
     const url = new URL(fileUrl);
     const siteWebUrl = getSiteWebUrlFromFileUrl(fileUrl);
     const serverRelativePath = url.pathname.replace(/'/g, "''");
-    const endpoint = `${siteWebUrl}/_api/web/GetFileByServerRelativePath(decodedurl='${serverRelativePath}')/ListItemAllFields`;
+    const endpoint = `${siteWebUrl}/_api/web/GetFileByServerRelativePath(decodedurl='${serverRelativePath}')/ListItemAllFields?$select=*,FieldValuesAsText/Author,FieldValuesAsText/Editor&$expand=FieldValuesAsText`;
 
     debugLog('Document metadata fallback started', { fileUrl, endpoint });
 
@@ -1019,8 +1021,19 @@ const getListItemMetadata = async (fileUrl: string): Promise<IDocumentListItemMe
       ...getFieldValueByCandidates(item, ['RelatedBank', 'Bank', 'Bank1']),
       ...getFieldsContaining(item, ['relatedbank', 'bank'])
     ].map(serializeMetadataValue));
-    const author = String(item?.Author?.Title || item?.Author || '');
-    const editor = String(item?.Editor?.Title || item?.Editor || '');
+    
+    const authorObj = item?.Author || item?.FieldValuesAsText?.Author || '';
+    const editorObj = item?.Editor || item?.FieldValuesAsText?.Editor || '';
+
+    const extractName = (raw: any): string => {
+      if (typeof raw === 'object' && raw !== null) {
+        return String(raw.Title || raw.name || raw.Email || raw.EMail || '');
+      }
+      return String(raw || '');
+    };
+
+    const author = extractName(authorObj);
+    const editor = extractName(editorObj);
     const modified = String(item?.Modified || '');
 
     const metadata = {
@@ -1110,12 +1123,41 @@ const enrichDocumentsWithListItemMetadata = async (
   );
 };
 
+const documentAlreadyHasRelatedValues = (document: ISearchRowDocument, kind: TaxonomyKind): boolean => {
+  if (kind === 'clients') {
+    return document.relatedClientValues.length > 0;
+  }
+
+  if (kind === 'entities') {
+    return document.relatedEntityValues.length > 0;
+  }
+
+  return document.relatedBankValues.length > 0;
+};
+
+const enrichDocumentsMissingRelatedValues = async (
+  documents: ISearchRowDocument[],
+  kind: TaxonomyKind
+): Promise<ISearchRowDocument[]> => {
+  const missingDocuments = documents.filter(document => !documentAlreadyHasRelatedValues(document, kind));
+
+  if (!missingDocuments.length) {
+    return documents;
+  }
+
+  const enrichedMissing = await enrichDocumentsWithListItemMetadata(missingDocuments);
+  const enrichedByPath = new Map(enrichedMissing.map(document => [document.path.toLowerCase(), document]));
+
+  return documents.map(document => enrichedByPath.get(document.path.toLowerCase()) || document);
+};
+
 export const searchDocCenterDocumentsByLabel = async (
   webUrl: string,
   kind: TaxonomyKind,
   selectedLabel: string,
   docCenterTermGuid?: string | null
 ): Promise<IDocumentSearchResult> => {
+
   debugLog('Document search requested', { kind, selectedLabel, docCenterTermGuid });
 
   const taxonomyMatch = await validateDocCenterTerm(webUrl, kind, selectedLabel, docCenterTermGuid);
@@ -1128,71 +1170,13 @@ export const searchDocCenterDocumentsByLabel = async (
 
   const searchLabel = taxonomyMatch.term?.label || selectedLabel;
   const searchTermId = taxonomyMatch.term?.id || undefined;
-  const query = buildTaxonomyQuery(kind, searchLabel, searchTermId);
-  let documents = await runSearchQuery(query);
-
-  if (!documents.length) {
-    debugLog('Primary document search empty, starting fallback scan', {
-      kind,
-      selectedLabel,
-      searchLabel,
-      searchTermId,
-      taxonomyMatched: taxonomyMatch.isValid
-    });
-    const allDocuments = await searchAllDocCenterDocuments();
-    const enrichedDocuments = await enrichDocumentsWithListItemMetadata(allDocuments);
-    documents = sortDocumentsByModifiedDesc(filterDocumentsByKind(
-      enrichedDocuments,
-      kind,
-      searchLabel,
-      searchTermId
-    ));
-
-    if (!documents.length) {
-      debugLog('Search fallback found no matches, starting REST library scan', {
-        kind,
-        selectedLabel,
-        searchLabel,
-        searchTermId
-      });
-      const listDocuments = await getAllDocCenterDocumentsFromLists();
-      documents = sortDocumentsByModifiedDesc(filterDocumentsByKind(
-        listDocuments,
-        kind,
-        searchLabel,
-        searchTermId
-      ));
-      debugLog('REST fallback filtered documents', {
-        kind,
-        selectedLabel,
-        scannedCount: listDocuments.length,
-        matchedCount: documents.length,
-        documents: documents.map(document => ({
-          title: document.title,
-          path: document.path,
-          relatedClient: document.relatedClient,
-          relatedEntity: document.relatedEntity,
-          relatedBank: document.relatedBank
-        }))
-      });
-    }
-
-    debugLog('Fallback scan filtered documents', {
-      kind,
-      selectedLabel,
-      scannedCount: allDocuments.length,
-      matchedCount: documents.length,
-      documents: documents.map(document => ({
-        title: document.title,
-        path: document.path,
-        relatedClient: document.relatedClient,
-        relatedEntity: document.relatedEntity,
-        relatedBank: document.relatedBank
-      }))
-    });
-  } else {
-    documents = await enrichDocumentsWithListItemMetadata(documents);
-  }
+  const allDocuments = await getCachedDocCenterDocuments();
+  let documents = sortDocumentsByModifiedDesc(filterDocumentsByKind(
+    allDocuments,
+    kind,
+    searchLabel,
+    searchTermId
+  ));
 
   documents = sortDocumentsByModifiedDesc(documents);
 
@@ -1213,7 +1197,7 @@ export const searchDocCenterDocumentsByLabel = async (
   return {
     documents: dedupeDocuments(documents),
     taxonomyMatch,
-    executedQuery: query
+    executedQuery: 'REST cache'
   };
 };
 
@@ -1222,6 +1206,29 @@ export const getRootClientLabel = async (
   clientId: number,
   fallbackName?: string | null
 ): Promise<string> => {
+  const cacheKey = `${clientId}|${normalizeTaxonomyLabel(fallbackName || '')}`;
+  const cached = rootClientLabelCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const request = getRootClientLabelUncached(webUrl, clientId, fallbackName);
+  rootClientLabelCache.set(cacheKey, request);
+
+  try {
+    return await request;
+  } catch (error) {
+    rootClientLabelCache.delete(cacheKey);
+    throw error;
+  }
+};
+
+async function getRootClientLabelUncached(
+  webUrl: string,
+  clientId: number,
+  fallbackName?: string | null
+): Promise<string> {
+
   debugLog('Root client label request started', { clientId, fallbackName });
 
   const clientField = TENANT_CONFIG.lists.clients.columns.client || 'Client';
@@ -1246,4 +1253,16 @@ export const getRootClientLabel = async (
   debugLog('Root client label request completed', { clientId, label, item });
 
   return label;
-};
+}
+
+// Automatically start loading all documents in the background the moment the page opens.
+// This guarantees the cache is pre-warmed so that when a user clicks the Document tab,
+// the documents are immediately visible without any extra wait time.
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    debugLog('Auto-starting background document cache warmup on page load');
+    getCachedDocCenterDocuments().catch(err => {
+      console.warn('DocCenter background warmup failed', err);
+    });
+  }, 500);
+}
