@@ -1,7 +1,6 @@
 import * as React from 'react';
 import styles from '../../Clients/RightPanelTabs/DocumentsTab.module.scss';
 import type { EntitySelection } from '../../Clients/RightPanelTabs/EntitiesTab';
-import { TENANT_CONFIG } from '../../../config/tenantConfig';
 import {
   searchDocCenterDocumentsByLabel,
   type IDocumentSearchItem
@@ -16,22 +15,22 @@ interface EntityDocumentsTabProps {
 
 interface Document {
   name: string;
-  activity: string;
   entity: string;
   status: string;
   modifiedDate: string;
   modifiedBy: string;
   absoluteUrl: string;
+  library: string;
 }
 
 const mapDocument = (document: IDocumentSearchItem): Document => ({
   name: document.title || document.fileName,
-  activity: document.activity,
   entity: document.relatedEntity || '-',
   status: document.status,
   modifiedDate: document.modifiedDate,
   modifiedBy: document.modifiedBy,
-  absoluteUrl: document.fileUrl
+  absoluteUrl: document.fileUrl,
+  library: document.activity
 });
 
 const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity }) => {
@@ -43,9 +42,12 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
     key: 'modifiedDate',
     direction: 'desc'
   });
-  const subTabs = React.useMemo(() => TENANT_CONFIG.libraries.entityActivityFilters, []);
+  const subTabs = React.useMemo(
+    () => ['All Documents', 'Asset Management', 'Entity Management', 'Finance Tax', 'Investment'],
+    []
+  );
   const [activeActivity, setActiveActivity] = React.useState<string>(
-    TENANT_CONFIG.libraries.entityActivityFilters[0]
+    'All Documents'
   );
 
   const loadDocuments = React.useCallback(async () => {
@@ -76,7 +78,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
         executedQuery: result.executedQuery
       });
       setDocuments(mappedDocuments);
-      setActiveActivity(TENANT_CONFIG.libraries.entityActivityFilters[0]);
+      setActiveActivity('All Documents');
     } catch (err) {
       console.error('Entity document load error', err);
       setError(err instanceof Error ? err.message : 'Failed to load documents');
@@ -92,14 +94,13 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
 
   const filteredDocuments = documents.filter(doc => {
     const matchesActivity =
-      activeActivity === TENANT_CONFIG.libraries.entityActivityFilters[0] || doc.activity === activeActivity;
+      activeActivity === 'All Documents' || doc.library === activeActivity;
 
     if (!searchQuery) return matchesActivity;
 
     const q = searchQuery.toLowerCase();
     const matchesSearch =
       doc.name.toLowerCase().includes(q) ||
-      doc.activity.toLowerCase().includes(q) ||
       doc.entity.toLowerCase().includes(q) ||
       doc.modifiedBy.toLowerCase().includes(q);
 
@@ -195,8 +196,7 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
           <div className={styles.headerRow}>
             {[
               ['name', 'Document Name'],
-              ['activity', 'Activity'],
-              ['entity', 'Entity'],
+              ['entity', 'Related Entity'],
               ['status', 'Status'],
               ['modifiedDate', 'Modified Date'],
               ['modifiedBy', 'Modified By']
@@ -229,7 +229,6 @@ const EntityDocumentsTab: React.FC<EntityDocumentsTabProps> = ({ webUrl, entity 
                     {doc.name}
                   </a>
                 </div>
-                <div>{doc.activity}</div>
                 <div>{doc.entity}</div>
                 <div>{doc.status || '-'}</div>
                 <div>{doc.modifiedDate}</div>

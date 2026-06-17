@@ -115,9 +115,11 @@ const REALITY_CRAFT = {
     managedProperties: {
       relatedClientTaxId: 'RelatedClientOWSTAXID',
       relatedClient: 'RelatedClient',
+      relatedClientRefinable: 'RefinableString01',
       relatedEntityTaxId: 'RelatedEntityOWSTAXID',
       relatedEntityTaxIdFallback: 'owstaxIdRelatedEntity',
-      relatedEntity: 'RelatedEntity',
+      relatedEntity: 'relatedEntity',
+      relatedEntityRefinable: 'RefinableString03',
       relatedBankTaxId: 'RelatedBankOWSTAXID',
       relatedBank: 'RelatedBank',
       fileName: 'FileName',

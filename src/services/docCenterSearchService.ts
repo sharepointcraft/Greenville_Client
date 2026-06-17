@@ -83,7 +83,7 @@ const extractUserName = (userField: string): string => {
 
 const getLibraryNameFromPath = (path: string): string => {
   const parts = String(path || '').split('/').filter(Boolean);
-  return parts.length > 1 ? parts[parts.length - 2] : 'Unknown';
+  return parts.length > 1 ? decodeURIComponent(parts[parts.length - 2]) : 'Unknown';
 };
 
 const getFileNameFromPath = (path: string): string => {
@@ -118,6 +118,38 @@ const DOC_CENTER_TARGET_LIBRARIES: IDocCenterTargetLibraryConfig[] = [
   { title: 'Finance Tax', internalName: 'Finance%20Tax' }
 ];
 const DOC_CENTER_REST_SCAN_ITEM_LIMIT = 50;
+const DOC_CENTER_CLIENT_SEARCH_LIBRARIES: IDocCenterTargetLibraryConfig[] = [
+  { title: 'Client Services', internalName: 'Client%20Services' },
+  { title: 'Finance Tax', internalName: 'Finance%20Tax' },
+  { title: 'Investment', internalName: 'Investment' }
+];
+const DOC_CENTER_ENTITY_SEARCH_LIBRARIES: IDocCenterTargetLibraryConfig[] = [
+  { title: 'Asset Management', internalName: 'Asset%20Management' },
+  { title: 'Entity Management', internalName: 'Entity%20Management' },
+  { title: 'Finance Tax', internalName: 'Finance%20Tax' },
+  { title: 'Investment', internalName: 'Investment' }
+];
+const DOC_CENTER_SEARCH_SELECT_PROPERTIES = [
+  'Title',
+  'Filename',
+  'FileName',
+  'Path',
+  'LastModifiedTime',
+  'Author',
+  'Editor',
+  'ModifiedBy',
+  'Status',
+  'StatusOWSCHCS',
+  'StatusOWSTEXT',
+  'RelatedClient',
+  'RefinableString01',
+  'relatedEntity',
+  'RelatedClientOWSTAXID',
+  'RelatedEntity',
+  'RefinableString03',
+  'RelatedEntityOWSTAXID',
+  'owstaxIdRelatedEntity'
+];
 
 const getObjectValue = (item: any, key: string): any => {
   if (!item || typeof item !== 'object') {
@@ -150,11 +182,49 @@ const getTargetDocCenterLibraryServerRelativeUrl = (library: IDocCenterTargetLib
 
 const escapeKqlPhrase = (value: string): string => String(value || '').replace(/"/g, '""');
 
-const buildScope = (): string =>
-  `contentclass:${TENANT_CONFIG.search.contentClassDocumentLibrary} AND path:"${TENANT_CONFIG.libraries.documentCenterPath}"`;
+const getDocCenterLibraryAbsolutePaths = (library: IDocCenterTargetLibraryConfig): string[] => {
+  const siteUrl = TENANT_CONFIG.sites.docCenter.replace(/\/+$/, '');
+  const encodedPath = `${siteUrl}/${library.internalName}`;
+  let decodedPath = encodedPath;
 
-const buildPathScope = (): string =>
-  `path:"${TENANT_CONFIG.libraries.documentCenterPath}"`;
+  try {
+    decodedPath = decodeURIComponent(encodedPath);
+  } catch {
+    decodedPath = encodedPath;
+  }
+
+  return uniqueStrings([encodedPath, decodedPath]);
+};
+
+const getSearchLibrariesForKind = (kind: TaxonomyKind): IDocCenterTargetLibraryConfig[] => {
+  if (kind === 'clients') {
+    return DOC_CENTER_CLIENT_SEARCH_LIBRARIES;
+  }
+
+  if (kind === 'entities') {
+    return DOC_CENTER_ENTITY_SEARCH_LIBRARIES;
+  }
+
+  return [];
+};
+
+const buildLibraryScope = (kind: TaxonomyKind): string => {
+  const libraryPathQueries = getSearchLibrariesForKind(kind)
+    .reduce((paths, library) => paths.concat(getDocCenterLibraryAbsolutePaths(library)), [] as string[])
+    .map(path => `path:"${escapeKqlPhrase(path)}/*"`);
+
+  if (!libraryPathQueries.length) {
+    return `path:"${TENANT_CONFIG.libraries.documentCenterPath}"`;
+  }
+
+  return `(${libraryPathQueries.join(' OR ')})`;
+};
+
+const buildScope = (kind: TaxonomyKind): string =>
+  `contentclass:${TENANT_CONFIG.search.contentClassDocumentLibrary} AND ${buildLibraryScope(kind)}`;
+
+const buildPathScope = (kind: TaxonomyKind): string =>
+  buildLibraryScope(kind);
 
 const buildTaxonomyQuery = (
   kind: TaxonomyKind,
@@ -180,6 +250,7 @@ const buildTaxonomyQuery = (
   if (kind === 'clients') {
     if (labelQueries.length) {
       fieldQueries.push(`${props.relatedClient}:(${labelQueries.join(' OR ')})`);
+      fieldQueries.push(`${props.relatedClientRefinable}:(${labelQueries.join(' OR ')})`);
       fieldQueries.push(`(${labelQueries.join(' OR ')})`);
     }
     if (guidQueries.length) {
@@ -190,6 +261,7 @@ const buildTaxonomyQuery = (
   if (kind === 'entities') {
     if (labelQueries.length) {
       fieldQueries.push(`${props.relatedEntity}:(${labelQueries.join(' OR ')})`);
+      fieldQueries.push(`${props.relatedEntityRefinable}:(${labelQueries.join(' OR ')})`);
       fieldQueries.push(`(${labelQueries.join(' OR ')})`);
     }
     if (guidQueries.length) {
@@ -209,19 +281,14 @@ const buildTaxonomyQuery = (
   }
 
   if (!fieldQueries.length) {
-    return buildScope();
+    return buildScope(kind);
   }
 
-  return `(${fieldQueries.join(' OR ')}) AND ${buildScope()}`;
+  return `(${fieldQueries.join(' OR ')}) AND ${buildScope(kind)}`;
 };
 
 const selectProperties = (): string =>
-  uniqueStrings([
-    TENANT_CONFIG.search.selectProperties.documents,
-    TENANT_CONFIG.search.selectProperties.documentsWithRelatedClient,
-    TENANT_CONFIG.search.managedProperties.relatedBank,
-    TENANT_CONFIG.search.managedProperties.relatedBankTaxId
-  ]).join(',');
+  uniqueStrings(DOC_CENTER_SEARCH_SELECT_PROPERTIES).join(',');
 
 const runSearchQuery = async (
   query: string,
@@ -231,7 +298,8 @@ const runSearchQuery = async (
   const url =
     `${TENANT_CONFIG.sites.docCenter}/_api/search/query?querytext='${encodeURIComponent(query)}'` +
     `&rowlimit=${TENANT_CONFIG.search.rowLimitDefault}${startRowPart}` +
-    `&selectproperties='${selectProperties()}'`;
+    `&selectproperties='${selectProperties()}'` +
+    `&sortlist='LastModifiedTime:descending'`;
 
   debugLog('Search query started', { query, startRow, url });
 
@@ -285,10 +353,13 @@ function mapSearchRow(row: any): ISearchRowDocument | null {
 
   const relatedClientValues = [
     getCellValue(cells, props.relatedClient),
+    getCellValue(cells, props.relatedClientRefinable),
     getCellValue(cells, props.relatedClientTaxId)
   ].filter(Boolean);
   const relatedEntityValues = [
     getCellValue(cells, props.relatedEntity),
+    getCellValue(cells, 'RelatedEntity'),
+    getCellValue(cells, props.relatedEntityRefinable),
     getCellValue(cells, props.relatedEntityTaxId),
     getCellValue(cells, props.relatedEntityTaxIdFallback)
   ].filter(Boolean);
@@ -301,6 +372,9 @@ function mapSearchRow(row: any): ISearchRowDocument | null {
   const editor = getCellValue(cells, 'Editor');
   const modifiedBy = getCellValue(cells, 'ModifiedBy') || editor || author;
   const fileName = getCellValue(cells, 'Filename') || getCellValue(cells, 'FileName') || getFileNameFromPath(path);
+  const status = getCellValue(cells, 'Status') ||
+    getCellValue(cells, 'StatusOWSCHCS') ||
+    getCellValue(cells, 'StatusOWSTEXT');
 
   return {
     title,
@@ -308,7 +382,7 @@ function mapSearchRow(row: any): ISearchRowDocument | null {
     fileUrl: path,
     path,
     activity: getLibraryNameFromPath(path),
-    status: '',
+    status,
     modifiedDate: lastModified ? new Date(lastModified).toLocaleDateString() : 'Unknown',
     modifiedBy: extractUserName(modifiedBy),
     author: extractUserName(author),
@@ -327,6 +401,7 @@ function mapSearchRow(row: any): ISearchRowDocument | null {
       Author: author,
       Editor: editor,
       ModifiedBy: modifiedBy,
+      Status: status,
       RelatedClient: valuesToDisplayText(relatedClientValues),
       RelatedEntity: valuesToDisplayText(relatedEntityValues),
       RelatedBank: valuesToDisplayText(relatedBankValues)
@@ -791,9 +866,9 @@ const getAllDocCenterDocumentsFromLists = async (): Promise<ISearchRowDocument[]
   }
 };
 
-const searchAllDocCenterDocuments = async (): Promise<ISearchRowDocument[]> => {
+const searchAllDocCenterDocuments = async (kind: TaxonomyKind): Promise<ISearchRowDocument[]> => {
   const documents: ISearchRowDocument[] = [];
-  const queries = [buildScope(), buildPathScope()];
+  const queries = [buildScope(kind), buildPathScope(kind)];
   const pageSize = TENANT_CONFIG.search.rowLimitDefault;
 
   debugLog('Search all DocCenter documents started', { queries, pageSize });
@@ -1130,69 +1205,6 @@ export const searchDocCenterDocumentsByLabel = async (
   const searchTermId = taxonomyMatch.term?.id || undefined;
   const query = buildTaxonomyQuery(kind, searchLabel, searchTermId);
   let documents = await runSearchQuery(query);
-
-  if (!documents.length) {
-    debugLog('Primary document search empty, starting fallback scan', {
-      kind,
-      selectedLabel,
-      searchLabel,
-      searchTermId,
-      taxonomyMatched: taxonomyMatch.isValid
-    });
-    const allDocuments = await searchAllDocCenterDocuments();
-    const enrichedDocuments = await enrichDocumentsWithListItemMetadata(allDocuments);
-    documents = sortDocumentsByModifiedDesc(filterDocumentsByKind(
-      enrichedDocuments,
-      kind,
-      searchLabel,
-      searchTermId
-    ));
-
-    if (!documents.length) {
-      debugLog('Search fallback found no matches, starting REST library scan', {
-        kind,
-        selectedLabel,
-        searchLabel,
-        searchTermId
-      });
-      const listDocuments = await getAllDocCenterDocumentsFromLists();
-      documents = sortDocumentsByModifiedDesc(filterDocumentsByKind(
-        listDocuments,
-        kind,
-        searchLabel,
-        searchTermId
-      ));
-      debugLog('REST fallback filtered documents', {
-        kind,
-        selectedLabel,
-        scannedCount: listDocuments.length,
-        matchedCount: documents.length,
-        documents: documents.map(document => ({
-          title: document.title,
-          path: document.path,
-          relatedClient: document.relatedClient,
-          relatedEntity: document.relatedEntity,
-          relatedBank: document.relatedBank
-        }))
-      });
-    }
-
-    debugLog('Fallback scan filtered documents', {
-      kind,
-      selectedLabel,
-      scannedCount: allDocuments.length,
-      matchedCount: documents.length,
-      documents: documents.map(document => ({
-        title: document.title,
-        path: document.path,
-        relatedClient: document.relatedClient,
-        relatedEntity: document.relatedEntity,
-        relatedBank: document.relatedBank
-      }))
-    });
-  } else {
-    documents = await enrichDocumentsWithListItemMetadata(documents);
-  }
 
   documents = sortDocumentsByModifiedDesc(documents);
 
